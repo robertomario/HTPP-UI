@@ -4,3 +4,4 @@ desktop.ini
 src/*.egg-info
 build/
 dist/
+personal/
