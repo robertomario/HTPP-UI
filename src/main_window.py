@@ -2,7 +2,7 @@
 
 # Author: Roberto Buelvas
 
-from datetime.datetime import fromtimestamp, strftime
+from datetime import datetime
 import time
 import os
 
@@ -10,9 +10,9 @@ import pynmea2
 import serial
 import wx
 
-from preferences_dialog import PreferencesDialog
-from plot_notebook import Plot, PlotNotebook
-from repeated_timer import RepeatedTimer
+from .preferences_dialog import PreferencesDialog
+from .plot_notebook import Plot, PlotNotebook
+from .repeated_timer import RepeatedTimer
 
 
 class MainWindow(wx.Frame):
@@ -140,7 +140,7 @@ class MainWindow(wx.Frame):
     def OnSave(self, e):
         """ Toolbar option to save and reset log """
         rootName = ('HHPLogFile'
-                    + fromtimestamp(time.time()).strftime('%Y-%m-%d')
+                    + datetime.fromtimestamp(time.time()).strftime('%Y-%m-%d')
                     + 'X')
         i = 1
         while(os.path.isfile(rootName+str(i) + '.txt')):
@@ -294,7 +294,7 @@ class MainWindow(wx.Frame):
     def updateUI(self, someValue):
         """ Update UI after receiving new sensor data """
         if(someValue is not None):
-            ts = fromtimestamp(time.time()).strftime('%Y-%m-%d %H:%M:%S')
+            ts = datetime.fromtimestamp(time.time()).strftime('%Y-%m-%d %H:%M:%S')
             if(isinstance(someValue, list)):
                 if(len(someValue) >= 5):
                     # CropCircle
