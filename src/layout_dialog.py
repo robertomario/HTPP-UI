@@ -1,4 +1,4 @@
-""" Display dialog window about user preferences """
+""" Display dialog window about layout """
 
 # Author: Roberto Buelvas
 
@@ -9,20 +9,20 @@ import serial
 import wx
 
 
-class PreferencesDialog(wx.Dialog):
+class LayoutDialog(wx.Dialog):
     """ Class to define dialog window """
 
     def __init__(self, settings, *args, **kw):
         """ Create new dialog """
-        super(PreferencesDialog, self).__init__(*args, **kw)
+        super(LayoutDialog, self).__init__(*args, **kw)
         self.settings = settings
-        self.InitUI()
+        self.initUI()
         self.SetSize((650, 300))
-        self.SetTitle('Preferences')
+        self.SetTitle('Layout')
 
-    def InitUI(self):
+    def initUI(self):
         """ Define dialog elements """
-        ports = [''] + self.GetSerialPorts()
+        ports = [''] + self.getSerialPorts()
 
         pnl = wx.Panel(self)
         vbox1 = wx.BoxSizer(wx.VERTICAL)
@@ -143,12 +143,12 @@ class PreferencesDialog(wx.Dialog):
         else:
             self.cb3.Enable(False)
 
-    def GetSettings(self):
+    def getSettings(self):
         """ return settings """
         return self.settings
 
     # https://stackoverflow.com/questions/12090503/listing-available-com-ports-with-python
-    def GetSerialPorts(self, maxNum=20):
+    def getSerialPorts(self, maxNum=20):
         """ Lists serial port names
 
             :raises EnvironmentError:

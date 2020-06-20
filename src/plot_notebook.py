@@ -27,7 +27,8 @@ class PlotNotebook(wx.Panel):
     def __init__(self, parent, id=-1):
         """ Create new notebook with one empty tab """
         wx.Panel.__init__(self, parent, id=id)
-        self.nb = aui.AuiNotebook(self)
+        self.nb = aui.AuiNotebook(self, agwStyle=aui.AUI_NB_WINDOWLIST_BUTTON
+                                  | aui.AUI_NB_SCROLL_BUTTONS)
         sizer = wx.BoxSizer()
         sizer.Add(self.nb, 1, wx.EXPAND)
         self.SetSizer(sizer)

@@ -10,9 +10,37 @@ import pynmea2
 import serial
 import wx
 
-from .preferences_dialog import PreferencesDialog
 from .plot_notebook import Plot, PlotNotebook
 from .repeated_timer import RepeatedTimer
+from .layout_dialog import LayoutDialog
+from .ports_dialog import PortsDialog
+
+
+# Dict to hold what sensor is the origin for each measured variable
+# 0 >> Multispectral
+# 1 >> Ultrasonic
+# 2 >> GPS
+# 3 >> Environmental
+variables = {
+    'CI': 0,
+    'NDRE': 0,
+    'NDVI': 0,
+    'proxy Distance': 0,
+    'proxy LAI': 0,
+    'proxy CCC': 0,
+    'Red-Edge': 0,
+    'NIR': 0,
+    'Red': 0,
+    'Distance': 1,
+    'Latitude': 2,
+    'Longitude': 2,
+    'Canopy Temperature': 3,
+    'Air Temperature': 3,
+    'Humidity': 3,
+    'Reflected PAR': 3,
+    'Incident PAR': 3,
+    'Pressure': 3
+}
 
 
 class MainWindow(wx.Frame):
@@ -29,13 +57,12 @@ class MainWindow(wx.Frame):
             self.cfg.Write('ultrasonicPort', '')
             self.cfg.WriteBool('GPSConnected', False)
             self.cfg.Write('GPSPort', '')
-        self.variables = ['NDRE', 'NDVI', 'Red-Edge', 'NIR', 'Red', 'Distance']
         self.numReadings = 0
         self.lastRecord = [0]
         self.axes = []
-        self.InitUI()
+        self.initUI()
 
-    def InitUI(self):
+    def initUI(self):
         """ Define window elements """
         menubar = wx.MenuBar()
 
@@ -48,20 +75,22 @@ class MainWindow(wx.Frame):
         self.Bind(wx.EVT_MENU, self.OnSave, savemi)
         fileMenu.AppendSeparator()
         qmi = wx.MenuItem(fileMenu, wx.ID_EXIT, '&Quit')
-        fileMenu.AppendItem(qmi)
+        fileMenu.Append(qmi)
         self.Bind(wx.EVT_MENU, self.OnQuit, qmi)
         menubar.Append(fileMenu, '&File')
 
         settingsMenu = wx.Menu()
-        preferencesmi = wx.MenuItem(settingsMenu, wx.ID_PREFERENCES,
-                                    '&Preferences')
-        settingsMenu.AppendItem(preferencesmi)
-        self.Bind(wx.EVT_MENU, self.OnPreferences, preferencesmi)
+        portsmi = wx.MenuItem(settingsMenu, wx.ID_PREFERENCES, '&Ports')
+        settingsMenu.Append(portsmi)
+        self.Bind(wx.EVT_MENU, self.OnPorts, portsmi)
+        layoutmi = wx.MenuItem(settingsMenu, wx.ID_ANY, '&Layout')
+        settingsMenu.Append(layoutmi)
+        self.Bind(wx.EVT_MENU, self.OnLayout, layoutmi)
         menubar.Append(settingsMenu, '&Settings')
 
         helpMenu = wx.Menu()
         aboutmi = wx.MenuItem(helpMenu, wx.ID_ABOUT, '&About')
-        helpMenu.AppendItem(aboutmi)
+        helpMenu.Append(aboutmi)
         self.Bind(wx.EVT_MENU, self.OnAbout, aboutmi)
         menubar.Append(helpMenu, '&Help')
 
@@ -90,8 +119,9 @@ class MainWindow(wx.Frame):
         middleBox = wx.BoxSizer(wx.VERTICAL)
         st3 = wx.StaticText(backgroundPanel, label='Plot:')
         plotter = PlotNotebook(backgroundPanel)
-        for i in range(6):
-            self.axes.append(plotter.add(self.variables[i]).gca())
+        variable_names = list(variables.keys())
+        for name in variable_names:
+            self.axes.append(plotter.add(name).gca())
         middleBox.Add(st3, proportion=0, flag=wx.ALL)
         middleBox.Add(plotter, proportion=7, flag=wx.EXPAND | wx.ALL,
                       border=20)
@@ -163,12 +193,12 @@ class MainWindow(wx.Frame):
                              'About', wx.OK | wx.ICON_INFORMATION)
         dial.Show()
 
-    def OnPreferences(self, e):
-        """ Toolbar option to open preferences dialog window """
-        pDialog = PreferencesDialog(self.cfg, self)
+    def OnPorts(self, e):
+        """ Toolbar option to open ports dialog window """
+        pDialog = PortsDialog(self.cfg, self)
         dialogFlag = pDialog.ShowModal()
         if(dialogFlag == wx.ID_OK):
-            results = pDialog.GetSettings()
+            results = pDialog.getSettings()
             self.cfg.WriteBool('multispectralConnected',
                                results.ReadBool('multispectralConnected'))
             self.cfg.Write('multispectralPort',
@@ -180,6 +210,24 @@ class MainWindow(wx.Frame):
                                results.ReadBool('GPSConnected'))
             self.cfg.Write('GPSPort', results.Read('GPSPort'))
         pDialog.Destroy()
+
+    def OnLayout(self, e):
+        """ Toolbar option to open ports dialog window """
+        lDialog = LayoutDialog(self.cfg, self)
+        dialogFlag = lDialog.ShowModal()
+        if(dialogFlag == wx.ID_OK):
+            results = lDialog.getSettings()
+            self.cfg.WriteBool('multispectralConnected',
+                               results.ReadBool('multispectralConnected'))
+            self.cfg.Write('multispectralPort',
+                           results.Read('multispectralPort'))
+            self.cfg.WriteBool('ultrasonicConnected',
+                               results.ReadBool('ultrasonicConnected'))
+            self.cfg.Write('ultrasonicPort', results.Read('ultrasonicPort'))
+            self.cfg.WriteBool('GPSConnected',
+                               results.ReadBool('GPSConnected'))
+            self.cfg.Write('GPSPort', results.Read('GPSPort'))
+        lDialog.Destroy()
 
     def OnStart(self, e):
         """ Button action to take measurements periodically """
