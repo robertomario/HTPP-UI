@@ -6,7 +6,6 @@ import glob
 import sys
 
 from wx.lib.scrolledpanel import ScrolledPanel
-import wx.lib.intctrl as intctrl
 import serial
 import wx
 
@@ -33,10 +32,6 @@ class PortsDialog(wx.Dialog):
 
     def initUI(self, num_sensors):
         """ Define dialog elements """
-        # self.Layout()
-        # self.ClearBackground()
-        # self.Refresh()
-
         ports = [''] + self.getSerialPorts()
 
         vbox0 = wx.BoxSizer(wx.VERTICAL)
@@ -47,10 +42,9 @@ class PortsDialog(wx.Dialog):
         st0 = wx.StaticText(pnl, label='Number of sensor units per side',
                             size=(300, 30))
         hbox0.Add(st0, proportion=0, flag=wx.ALL)
-        self.intCtrl = intctrl.IntCtrl(pnl, value=num_sensors, min=1,
-                                       limited=True, allow_none=True)
-        self.intCtrl.Bind(wx.EVT_TEXT, self.OnNumberChange)
-        hbox0.Add(self.intCtrl, proportion=0, flag=wx.ALL)
+        self.spinCtrl = wx.SpinCtrl(pnl, min=1, initial=num_sensors)
+        self.spinCtrl.Bind(wx.EVT_TEXT, self.OnNumberChange)
+        hbox0.Add(self.spinCtrl, proportion=0, flag=wx.ALL)
 
         vbox1.Add(hbox0, proportion=1, border=10, flag=wx.TOP | wx.BOTTOM
                   | wx.EXPAND)
@@ -157,7 +151,7 @@ class PortsDialog(wx.Dialog):
 
     def OnOK(self, e):
         """ Save new settings and close """
-        self.settings.WriteInt('numSensors', self.intCtrl.GetValue())
+        self.settings.WriteInt('numSensors', self.spinCtrl.GetValue())
         other_settings = list(self.setting_to_checkbox.keys())
         for setting in other_settings:
             chb = self.setting_to_checkbox[setting]

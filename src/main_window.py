@@ -156,16 +156,16 @@ class MainWindow(wx.Frame):
 
     def OnNew(self, e):
         """ Toolbar option to reset log without saving"""
-        confirmationDiag = wx.MessageDialog(None,
-                                            'Are you sure you want to clear the log?',
-                                            'Question',
-                                            wx.YES_NO | wx.NO_DEFAULT | wx.ICON_QUESTION)
-        dialogFlag = confirmationDiag.ShowModal()
+        confirmDiag = wx.MessageDialog(None,
+                                       'Are you sure you want to clear the log?',
+                                       'Question',
+                                       wx.YES_NO | wx.NO_DEFAULT | wx.ICON_QUESTION)
+        dialogFlag = confirmDiag.ShowModal()
         print(dialogFlag)
         if(dialogFlag == wx.ID_YES):
             self.logText.SetValue('')
             self.numReadings = 0
-        # confirmationDiag.Destroy()
+        # confirmDiag.Destroy()
 
     def OnSave(self, e):
         """ Toolbar option to save and reset log """
@@ -186,12 +186,11 @@ class MainWindow(wx.Frame):
 
     def OnAbout(self, e):
         """ Toolbar option to show About dialog """
-        dial = wx.MessageBox(("High-Throughput Plant Phenotyping Platform \n"
-                              "Made by Roberto Buelvas\n"
-                              "McGill University, 2020\n"
-                              "Version 0.1\n"),
-                             'About', wx.OK | wx.ICON_INFORMATION)
-        dial.Show()
+        wx.MessageBox(("High-Throughput Plant Phenotyping Platform \n"
+                       "Made by Roberto Buelvas\n"
+                       "McGill University, 2020\n"
+                       "Version 0.1\n"),
+                      'About', wx.OK | wx.ICON_INFORMATION)
 
     def OnPorts(self, e):
         """ Toolbar option to open ports dialog window """
@@ -342,7 +341,8 @@ class MainWindow(wx.Frame):
     def updateUI(self, someValue):
         """ Update UI after receiving new sensor data """
         if(someValue is not None):
-            ts = datetime.fromtimestamp(time.time()).strftime('%Y-%m-%d %H:%M:%S')
+            ts = datetime.fromtimestamp(time.time()) \
+                         .strftime('%Y-%m-%d %H:%M:%S')
             if(isinstance(someValue, list)):
                 if(len(someValue) >= 5):
                     # CropCircle
