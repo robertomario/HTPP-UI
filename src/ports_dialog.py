@@ -60,77 +60,14 @@ class PortsDialog(wx.Dialog):
             vbox_aux.Add(st_aux, proportion=0, flag=wx.ALL)
             if(scaling):
                 for i in range(num_sensors):
-                    hbox_aux = wx.BoxSizer(wx.HORIZONTAL)
-                    chb_aux = wx.CheckBox(pnl, label='L'+str(i+1))
-                    hbox_aux.Add(chb_aux, proportion=1, flag=wx.ALL
-                                 | wx.EXPAND)
-                    chb_aux.Bind(wx.EVT_CHECKBOX, self.OnChecked)
-                    cb_aux = wx.ComboBox(pnl, choices=ports)
-                    self.checkbox_to_combobox[chb_aux] = cb_aux
-                    suffix = name+'L'+str(i+1)
-                    self.setting_to_checkbox[suffix] = chb_aux
-                    chb_aux.SetValue(self.settings.ReadBool('connected'+suffix,
-                                                            False))
-                    if(chb_aux.GetValue()):
-                        cb_aux.Enable(True)
-                        cb_aux.SetValue(self.settings.Read('port'+suffix, ''))
-                    else:
-                        cb_aux.Enable(False)
-                    hbox_aux.Add(cb_aux, proportion=1, flag=wx.ALL | wx.EXPAND)
-                    vbox_aux.Add(hbox_aux, proportion=1, flag=wx.EXPAND)
+                    self.addCheckComboBoxes(vbox_aux, pnl, ports, name, 'L',
+                                            number=i + 1)
                 for i in range(num_sensors):
-                    hbox_aux = wx.BoxSizer(wx.HORIZONTAL)
-                    chb_aux = wx.CheckBox(pnl, label='R'+str(i+1))
-                    hbox_aux.Add(chb_aux, proportion=1, flag=wx.ALL
-                                 | wx.EXPAND)
-                    chb_aux.Bind(wx.EVT_CHECKBOX, self.OnChecked)
-                    cb_aux = wx.ComboBox(pnl, choices=ports)
-                    self.checkbox_to_combobox[chb_aux] = cb_aux
-                    suffix = name+'R'+str(i+1)
-                    self.setting_to_checkbox[suffix] = chb_aux
-                    chb_aux.SetValue(self.settings.ReadBool('connected'+suffix,
-                                     False))
-                    if(chb_aux.GetValue()):
-                        cb_aux.Enable(True)
-                        cb_aux.SetValue(self.settings.Read('port'+suffix, ''))
-                    else:
-                        cb_aux.Enable(False)
-                    hbox_aux.Add(cb_aux, proportion=1, flag=wx.ALL | wx.EXPAND)
-                    vbox_aux.Add(hbox_aux, proportion=1, flag=wx.EXPAND)
+                    self.addCheckComboBoxes(vbox_aux, pnl, ports, name, 'R',
+                                            number=i + 1)
             else:
-                hbox_aux = wx.BoxSizer(wx.HORIZONTAL)
-                chb_aux = wx.CheckBox(pnl, label='L')
-                hbox_aux.Add(chb_aux, proportion=1, flag=wx.ALL | wx.EXPAND)
-                chb_aux.Bind(wx.EVT_CHECKBOX, self.OnChecked)
-                cb_aux = wx.ComboBox(pnl, choices=ports)
-                self.checkbox_to_combobox[chb_aux] = cb_aux
-                self.setting_to_checkbox[name+'L'] = chb_aux
-                chb_aux.SetValue(self.settings.ReadBool('connected'+name+'L',
-                                 False))
-                if(chb_aux.GetValue()):
-                    cb_aux.Enable(True)
-                    cb_aux.SetValue(self.settings.Read('port'+name+'L', ''))
-                else:
-                    cb_aux.Enable(False)
-                hbox_aux.Add(cb_aux, proportion=1, flag=wx.ALL | wx.EXPAND)
-                vbox_aux.Add(hbox_aux, proportion=1, flag=wx.EXPAND)
-
-                hbox_aux = wx.BoxSizer(wx.HORIZONTAL)
-                chb_aux = wx.CheckBox(pnl, label='R')
-                hbox_aux.Add(chb_aux, proportion=1, flag=wx.ALL | wx.EXPAND)
-                chb_aux.Bind(wx.EVT_CHECKBOX, self.OnChecked)
-                cb_aux = wx.ComboBox(pnl, choices=ports)
-                self.checkbox_to_combobox[chb_aux] = cb_aux
-                self.setting_to_checkbox[name+'R'] = chb_aux
-                chb_aux.SetValue(self.settings.ReadBool('connected'+name+'R',
-                                 False))
-                if(chb_aux.GetValue()):
-                    cb_aux.Enable(True)
-                    cb_aux.SetValue(self.settings.Read('port'+name+'R', ''))
-                else:
-                    cb_aux.Enable(False)
-                hbox_aux.Add(cb_aux, proportion=1, flag=wx.ALL | wx.EXPAND)
-                vbox_aux.Add(hbox_aux, proportion=1, flag=wx.EXPAND)
+                self.addCheckComboBoxes(vbox_aux, pnl, ports, name, 'L')
+                self.addCheckComboBoxes(vbox_aux, pnl, ports, name, 'R')
             vbox1.Add(vbox_aux, proportion=1, border=10, flag=wx.TOP
                       | wx.BOTTOM | wx.EXPAND)
         pnl.SetSizer(vbox1)
@@ -215,3 +152,28 @@ class PortsDialog(wx.Dialog):
             except (OSError, serial.SerialException):
                 pass
         return result
+
+    def addCheckComboBoxes(self, boxSizer, pnl, comboOptions,
+                           name, side, number=None):
+        """ Add a combobox and a checkbox that controls if the former is
+        enabled """
+        hbox_aux = wx.BoxSizer(wx.HORIZONTAL)
+        if(number is None):
+            suffix = name[0].lower()+side
+        else:
+            suffix = name[0].lower()+side+str(number)
+        chb_aux = wx.CheckBox(pnl, label=suffix)
+        hbox_aux.Add(chb_aux, proportion=1, flag=wx.ALL | wx.EXPAND)
+        chb_aux.Bind(wx.EVT_CHECKBOX, self.OnChecked)
+        cb_aux = wx.ComboBox(pnl, choices=comboOptions)
+        self.checkbox_to_combobox[chb_aux] = cb_aux
+        self.setting_to_checkbox[suffix] = chb_aux
+        chb_aux.SetValue(self.settings.ReadBool('connected' + suffix, False))
+        if(chb_aux.GetValue()):
+            cb_aux.Enable(True)
+            cb_aux.SetValue(self.settings.Read('port' + suffix, ''))
+        else:
+            cb_aux.SetValue('')
+            cb_aux.Enable(False)
+        hbox_aux.Add(cb_aux, proportion=1, flag=wx.ALL | wx.EXPAND)
+        boxSizer.Add(hbox_aux, proportion=1, flag=wx.EXPAND)
