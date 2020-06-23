@@ -11,10 +11,10 @@ import wx
 
 
 devices = {
-    0: ('Multispectral', True),
-    1: ('Ultrasonic', True),
-    2: ('GPS', False),
-    3: ('Environmental', False)
+    'm': ('Multispectral', True),
+    'u': ('Ultrasonic', True),
+    'g': ('GPS', False),
+    'e': ('Environmental', False)
 }
 
 

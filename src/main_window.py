@@ -3,6 +3,7 @@
 # Author: Roberto Buelvas
 
 from datetime import datetime
+import random
 import time
 import os
 
@@ -21,10 +22,12 @@ from .sensors import openPort, getSensorReading
 # 2 >> GPS
 # 3 >> Environmental
 variables = {
-    'm': ['CI', 'NDRE', 'NDVI', 'proxy Distance', 'proxy LAI', 'proxy CCC', 'Red-Edge', 'NIR', 'Red'],
+    'm': ['CI', 'NDRE', 'NDVI', 'proxy Distance', 'proxy LAI', 'proxy CCC',
+          'Red-Edge', 'NIR', 'Red'],
     'u': ['Distance'],
     'g': ['Latitude', 'Longitude'],
-    'e': ['Canopy Temperature', 'Air Temperature', 'Humidity', 'Reflected PAR', 'Incident PAR', 'Pressure']
+    'e': ['Canopy Temperature', 'Air Temperature', 'Humidity', 'Reflected PAR',
+          'Incident PAR', 'Pressure']
 }
 
 
@@ -41,6 +44,7 @@ class MainWindow(wx.Frame):
         self.axes = {}
         self.label_to_device = {}
         self.initUI()
+        self.previous_measurements = {}
 
     def initUI(self):
         """ Define window elements """
@@ -102,33 +106,33 @@ class MainWindow(wx.Frame):
 
         middleBox = wx.BoxSizer(wx.VERTICAL)
         st3 = wx.StaticText(backgroundPanel, label='Plot:')
-        plotter = PlotNotebook(backgroundPanel)
-        variable_names = []
-        for namelist in list(variables.values()):
-            variable_names = variable_names + namelist
-        for name in variable_names:
-            self.axes[name] = plotter.add(name).gca()
+        self.plotter = PlotNotebook(backgroundPanel)
+        num_sensors = self.cfg.ReadInt('numSensors', 1)
+        for device_name in list(variables.keys()):
+            variable_names = variables[device_name]
+            scaling = devices[device_name][1]
+            for name in variable_names:
+                self.axes[name] = self.plotter.add(name, device_name, scaling,
+                                                   num_sensors)
+
         middleBox.Add(st3, proportion=0, flag=wx.ALL)
-        middleBox.Add(plotter, proportion=7, flag=wx.EXPAND | wx.ALL,
+        middleBox.Add(self.plotter, proportion=7, flag=wx.EXPAND | wx.ALL,
                       border=20)
 
         rightBox = wx.BoxSizer(wx.VERTICAL)
         btn_connect = wx.ToggleButton(backgroundPanel, label='Connect')
-        btn_connect.Bind(wx.EVT_TOGGLEBUTTON, self.OnConnect)
-        btn1 = wx.Button(backgroundPanel, label='Start')
+        btn1 = wx.ToggleButton(backgroundPanel, label='Start')
         btn2 = wx.Button(backgroundPanel, label='Measure')
         btn3 = wx.Button(backgroundPanel, label='Erase')
-        btn4 = wx.Button(backgroundPanel, label='Stop')
-        btn1.Bind(wx.EVT_BUTTON, self.OnStart)
+        btn_connect.Bind(wx.EVT_TOGGLEBUTTON, self.OnConnect)
+        btn1.Bind(wx.EVT_TOGGLEBUTTON, self.OnStart)
         btn2.Bind(wx.EVT_BUTTON, self.OnMeasure)
         btn3.Bind(wx.EVT_BUTTON, self.OnErase)
-        btn4.Bind(wx.EVT_BUTTON, self.OnStop)
         rightBox.Add(btn_connect, proportion=1, flag=wx.EXPAND | wx.ALL,
                      border=20)
         rightBox.Add(btn1, proportion=1, flag=wx.EXPAND | wx.ALL, border=20)
         rightBox.Add(btn2, proportion=1, flag=wx.EXPAND | wx.ALL, border=20)
         rightBox.Add(btn3, proportion=1, flag=wx.EXPAND | wx.ALL, border=20)
-        rightBox.Add(btn4, proportion=1, flag=wx.EXPAND | wx.ALL, border=20)
 
         outerBox.Add(leftBox, proportion=1, flag=wx.EXPAND | wx.ALL, border=20)
         outerBox.Add(middleBox, proportion=2, flag=wx.EXPAND | wx.ALL,
@@ -144,12 +148,15 @@ class MainWindow(wx.Frame):
     def OnNew(self, e):
         """ Toolbar option to reset log without saving"""
         confirmDiag = wx.MessageDialog(None,
-                                       'Are you sure you want to clear the log?',
+                                       ('Are you sure you want to clear '
+                                        + 'the log?'),
                                        'Question',
-                                       wx.YES_NO | wx.NO_DEFAULT | wx.ICON_QUESTION)
+                                       (wx.YES_NO | wx.NO_DEFAULT
+                                        | wx.ICON_QUESTION))
         dialogFlag = confirmDiag.ShowModal()
         if(dialogFlag == wx.ID_YES):
             self.logText.SetValue('')
+            self.plotter.clear()
             self.numReadings = 0
             self.logSettings()
 
@@ -164,6 +171,7 @@ class MainWindow(wx.Frame):
         finalFilename = rootName + str(i) + '.txt'
         self.logText.SaveFile(finalFilename)
         self.logText.SetValue('')
+        self.plotter.clear()
         self.numReadings = 0
 
     def OnQuit(self, e):
@@ -212,9 +220,11 @@ class MainWindow(wx.Frame):
     def OnClear(self, e):
         """ Toolbar option to clear all settings """
         confirmDiag = wx.MessageDialog(None,
-                                       'Are you sure you want to clear the settings?',
+                                       ('Are you sure you want to clear '
+                                        + 'the settings?'),
                                        'Question',
-                                       wx.YES_NO | wx.NO_DEFAULT | wx.ICON_QUESTION)
+                                       (wx.YES_NO | wx.NO_DEFAULT
+                                        | wx.ICON_QUESTION))
         dialogFlag = confirmDiag.ShowModal()
         if(dialogFlag == wx.ID_YES):
             all_config_keys = []
@@ -231,6 +241,7 @@ class MainWindow(wx.Frame):
         btn = e.GetEventObject()
         is_pressed = btn.GetValue()
         if(is_pressed):
+            btn.SetLabelText('Disconnect')
             self.label_to_device = {}
             labels = self.getLabels()
             for label in labels:
@@ -245,15 +256,25 @@ class MainWindow(wx.Frame):
                         device = openPort(port, label)
                         self.label_to_device[label] = device
         else:
+            btn.SetLabelText('Connect')
             self.disconnect()
 
     def OnStart(self, e):
         """ Button action to take measurements periodically """
-        self.rt = RepeatedTimer(1, self.sayHi)
+        # self.rt = RepeatedTimer(1, self.sayHi)
+        btn = e.GetEventObject()
+        is_pressed = btn.GetValue()
+        if(is_pressed):
+            btn.SetLabelText('Stop')
+            self.rt = RepeatedTimer(1, self.simulateSensorReadings)
+        else:
+            btn.SetLabelText('Start')
+            self.rt.stop()
 
     def OnMeasure(self, e):
         """ Button action to take one measurement """
-        self.getAllReadings()
+        # self.getAllReadings()
+        self.simulateSensorReadings()
 
     def OnErase(self, e):
         """ Button action to delete last measurement from log """
@@ -263,13 +284,23 @@ class MainWindow(wx.Frame):
             if(len(self.lastRecord) > 1):
                 del self.lastRecord[-1]
 
-    def OnStop(self, e):
-        """ Button action to measurements after OnStart """
-        self.rt.stop()
-
     def sayHi(self):
         """ Display text for debugging the OnStart method """
         self.logText.AppendText("Hi, Roberto \n")
+
+    def simulateSensorReadings(self):
+        """ Create random number to pretend behaviour of getAllReadings() """
+        self.lastRecord.append(self.logText.GetLastPosition())
+        self.logText.AppendText('*****'+str(self.numReadings)+'*****\n')
+        labels = self.getLabels()
+        for label in labels:
+            if(self.cfg.ReadBool('connected' + label, False)):
+                reading = []
+                for i in range(len(variables[label[0]])):
+                    reading.append(random.random())
+                self.updateUI(reading, label)
+        self.plotter.refresh()
+        self.numReadings += 1
 
     def getAllReadings(self):
         """ Get readings from all sensors """
@@ -299,11 +330,35 @@ class MainWindow(wx.Frame):
             pass
 
     def updatePlot(self, someValue, label):
+
         sensor_type = label[0]
+        if(devices[sensor_type][1]):
+            print(label)
+            color_number = int(label[2])-1
+            if(label[1] == 'R'):
+                color_number += self.cfg.ReadInt('numSensors', 1)
+        else:
+            if(label[1] == 'L'):
+                color_number = 0
+            else:
+                color_number = 1
         measured_properties = variables[sensor_type]
-        for measured_property in measured_properties:
-            self.axes[measured_property].plot(someValue, label)
-            # TODO
+        for i, measured_property in enumerate(measured_properties):
+            if(self.numReadings == 0):
+                self.axes[measured_property] \
+                    .plot(self.numReadings, someValue[i], marker='o',
+                          color='C' + str(color_number),
+                          markerfacecolor='C' + str(color_number))
+            else:
+                self.axes[measured_property] \
+                    .plot([self.numReadings-1, self.numReadings],
+                          [self.previous_measurements[(label + '/'
+                                                       + measured_property)],
+                          someValue[i]], marker='o',
+                          color='C' + str(color_number),
+                          markerfacecolor='C' + str(color_number))
+            self.previous_measurements[(label + '/'
+                                        + measured_property)] = someValue[i]
 
     def updateMap(self, someValue, label):
         self.mapAxes.plot(someValue, label)
