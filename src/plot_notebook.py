@@ -49,12 +49,12 @@ class PlotNotebook(wx.Panel):
         if(scaling):
             legend_elements_L = [Line2D([0], [0], marker='o',
                                         color='C' + str(i),
-                                        label=device_name + 'L' + str(i),
+                                        label=device_name + 'L' + str(i+1),
                                         markerfacecolor='C' + str(i))
                                  for i in range(num_sensors)]
             legend_elements_R = [Line2D([0], [0], marker='o',
                                         color='C' + str(num_sensors + i),
-                                        label=device_name + 'R' + str(i),
+                                        label=device_name + 'R' + str(i+1),
                                         markerfacecolor='C' + str(num_sensors
                                                                   + i))
                                  for i in range(num_sensors)]

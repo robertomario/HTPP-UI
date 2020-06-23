@@ -113,7 +113,7 @@ def getUltrasonicReading(device, numValues=10):
     return [finalMeasurement/numValues]
 
 
-def getGPSReading(device, numValues=5):
+def getGPSReading(device, numValues=3):
     """ Get reading from GPS sensor """
     i = 0
     while(i < numValues):
@@ -229,7 +229,7 @@ def getOpenUltrasonicReading(port, numValues=10):
     return [finalMeasurement/numValues]
 
 
-def getOpenGPSReading(port, numValues=5):
+def getOpenGPSReading(port, numValues=3):
     """ Get reading from GPS sensor """
     serialGPS = serial.Serial(port, 9600)
     i = 0

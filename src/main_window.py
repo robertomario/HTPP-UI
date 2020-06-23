@@ -162,7 +162,7 @@ class MainWindow(wx.Frame):
 
     def OnSave(self, e):
         """ Toolbar option to save and reset log """
-        rootName = ('HHPLogFile'
+        rootName = ('data/HTPPLogFile'
                     + datetime.fromtimestamp(time.time()).strftime('%Y-%m-%d')
                     + 'X')
         i = 1

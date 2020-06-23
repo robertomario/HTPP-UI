@@ -1,0 +1,3 @@
+The data files will be saved in this folder as .txt files.
+This file is here just so that the folder is not empty if no measurements have
+been taken yet. 
