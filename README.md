@@ -20,8 +20,8 @@ in order to launch.
 
 After that go to the Settings menu in the toolbar and select
 the correct ports where the sensors are located.
-The system will expect the following order for the sensor connections
-in the Serial to USB converters:
+
+The default sensor connections in the Serial to USB converters:
 ```bash
 1 >> Environmental
 2 >> Multispectral

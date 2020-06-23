@@ -55,8 +55,10 @@ class LayoutDialog(wx.Dialog):
             self.addLabelledCtrl(pnl, vbox1, "DGRY")
         if(self.settings.ReadBool('connectedeL', False)):
             self.addLabelledCtrl(pnl, vbox1, "IEL")
+            self.addLabelledCtrl(pnl, vbox1, "DEL")
         if(self.settings.ReadBool('connectedeR', False)):
             self.addLabelledCtrl(pnl, vbox1, "IER")
+            self.addLabelledCtrl(pnl, vbox1, "DER")
 
         pnl.SetSizer(vbox1)
         pnl.SetupScrolling()

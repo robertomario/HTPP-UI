@@ -5,6 +5,7 @@
 from datetime import datetime
 import random
 import time
+import math
 import os
 
 import wx
@@ -25,7 +26,7 @@ variables = {
     'm': ['CI', 'NDRE', 'NDVI', 'proxy Distance', 'proxy LAI', 'proxy CCC',
           'Red-Edge', 'NIR', 'Red'],
     'u': ['Distance'],
-    'g': ['Latitude', 'Longitude'],
+    'g': ['Latitude', 'Longitude', 'X', 'Y', 'Heading', 'Velocity', 'Time'],
     'e': ['Canopy Temperature', 'Air Temperature', 'Humidity', 'Reflected PAR',
           'Incident PAR', 'Pressure']
 }
@@ -39,12 +40,11 @@ class MainWindow(wx.Frame):
         super(MainWindow, self).__init__(*args, **kwargs)
         self.cfg = wx.Config('HTPPconfig')
         self.cfg.WriteBool('notEmpty', True)
-        self.numReadings = 0
-        self.lastRecord = [0]
+        self.labels = []
         self.axes = {}
         self.label_to_device = {}
+        self.clearVariables()
         self.initUI()
-        self.previous_measurements = {}
 
     def initUI(self):
         """ Define window elements """
@@ -93,14 +93,14 @@ class MainWindow(wx.Frame):
 
         leftBox = wx.BoxSizer(wx.VERTICAL)
         st1 = wx.StaticText(backgroundPanel, label='Map:')
-        mapPanel = Plot(backgroundPanel)
-        self.mapAxes = mapPanel.figure.gca()
+        self.mapPanel = Plot(backgroundPanel)
+        self.mapAxes = self.mapPanel.figure.gca()
         st2 = wx.StaticText(backgroundPanel, label='Log:')
         self.logText = wx.TextCtrl(backgroundPanel, style=wx.TE_MULTILINE
                                    | wx.TE_READONLY)
         self.logSettings()
         leftBox.Add(st1, proportion=0, flag=wx.ALL)
-        leftBox.Add(mapPanel, wx.ID_ANY, wx.EXPAND | wx.ALL, 20)
+        leftBox.Add(self.mapPanel, wx.ID_ANY, wx.EXPAND | wx.ALL, 20)
         leftBox.Add(st2, proportion=0, flag=wx.ALL)
         leftBox.Add(self.logText, wx.ID_ANY, wx.EXPAND | wx.ALL, 20)
 
@@ -134,8 +134,8 @@ class MainWindow(wx.Frame):
         rightBox.Add(btn2, proportion=1, flag=wx.EXPAND | wx.ALL, border=20)
         rightBox.Add(btn3, proportion=1, flag=wx.EXPAND | wx.ALL, border=20)
 
-        outerBox.Add(leftBox, proportion=1, flag=wx.EXPAND | wx.ALL, border=20)
-        outerBox.Add(middleBox, proportion=2, flag=wx.EXPAND | wx.ALL,
+        outerBox.Add(leftBox, proportion=2, flag=wx.EXPAND | wx.ALL, border=20)
+        outerBox.Add(middleBox, proportion=3, flag=wx.EXPAND | wx.ALL,
                      border=20)
         outerBox.Add(rightBox, proportion=1, flag=wx.EXPAND | wx.ALL,
                      border=20)
@@ -156,9 +156,11 @@ class MainWindow(wx.Frame):
         dialogFlag = confirmDiag.ShowModal()
         if(dialogFlag == wx.ID_YES):
             self.logText.SetValue('')
-            self.plotter.clear()
-            self.numReadings = 0
             self.logSettings()
+            self.plotter.clear()
+            self.mapPanel.clear()
+            self.mapPanel.refresh()
+            self.clearVariables()
 
     def OnSave(self, e):
         """ Toolbar option to save and reset log """
@@ -171,8 +173,11 @@ class MainWindow(wx.Frame):
         finalFilename = rootName + str(i) + '.txt'
         self.logText.SaveFile(finalFilename)
         self.logText.SetValue('')
+        self.logSettings()
         self.plotter.clear()
-        self.numReadings = 0
+        self.mapPanel.clear()
+        self.mapPanel.refresh()
+        self.clearVariables()
 
     def OnQuit(self, e):
         """ Toolbar option to exit application """
@@ -192,12 +197,15 @@ class MainWindow(wx.Frame):
         dialogFlag = pDialog.ShowModal()
         if(dialogFlag == wx.ID_OK):
             results = pDialog.getSettings()
-            labels = self.getLabels()
-            for label in labels:
+            num_sensors = results.ReadInt('numSensors', 1)
+            self.cfg.WriteInt('numSensors', num_sensors)
+            for label in self.labels:
                 self.cfg.WriteBool('connected'+label,
                                    results.ReadBool('connected' + label))
                 self.cfg.Write('port'+label, results.Read('port' + label))
             self.logSettings()
+            self.labels = self.getLabels()
+            self.plotter.redoLegend(variables, devices, num_sensors)
         pDialog.Destroy()
 
     def OnLayout(self, e):
@@ -243,8 +251,7 @@ class MainWindow(wx.Frame):
         if(is_pressed):
             btn.SetLabelText('Disconnect')
             self.label_to_device = {}
-            labels = self.getLabels()
-            for label in labels:
+            for label in self.labels:
                 if(self.cfg.ReadBool('connected' + label, False)):
                     port = self.cfg.Read('port' + label)
                     if(port == ''):
@@ -292,12 +299,14 @@ class MainWindow(wx.Frame):
         """ Create random number to pretend behaviour of getAllReadings() """
         self.lastRecord.append(self.logText.GetLastPosition())
         self.logText.AppendText('*****'+str(self.numReadings)+'*****\n')
-        labels = self.getLabels()
-        for label in labels:
+        for label in self.labels:
             if(self.cfg.ReadBool('connected' + label, False)):
-                reading = []
-                for i in range(len(variables[label[0]])):
-                    reading.append(random.random())
+                if(label[0] == 'g'):
+                    reading = [-73.939830, 45.423804+0.001*self.numReadings]
+                else:
+                    reading = []
+                    for i in range(len(variables[label[0]])):
+                        reading.append(random.random())
                 self.updateUI(reading, label)
         self.plotter.refresh()
         self.numReadings += 1
@@ -306,18 +315,21 @@ class MainWindow(wx.Frame):
         """ Get readings from all sensors """
         self.lastRecord.append(self.logText.GetLastPosition())
         self.logText.AppendText('*****'+str(self.numReadings)+'*****\n')
-        labels = self.getLabels()
-        for label in labels:
+        for label in self.labels:
             if(self.cfg.ReadBool('connected' + label, False)):
                 reading = getSensorReading(self.label_to_device[label], label)
                 self.updateUI(reading, label)
         self.numReadings += 1
 
     def updateUI(self, someValue, label):
-        self.updateLog(someValue, label)
-        self.updatePlot(someValue, label)
+        """ Updates UI after receiving new sensor data """
         if(label[0] == 'g'):
-            self.updateMap(someValue, label)
+            values = self.processGPS(someValue, label)
+            self.updateMap(values, label)
+        else:
+            values = someValue
+        self.updateLog(values, label)
+        self.updatePlot(values, label)
 
     def updateLog(self, someValue, label):
         """ Update UI after receiving new sensor data """
@@ -330,10 +342,9 @@ class MainWindow(wx.Frame):
             pass
 
     def updatePlot(self, someValue, label):
-
+        """ Updates UI after receiving new sensor data """
         sensor_type = label[0]
         if(devices[sensor_type][1]):
-            print(label)
             color_number = int(label[2])-1
             if(label[1] == 'R'):
                 color_number += self.cfg.ReadInt('numSensors', 1)
@@ -361,10 +372,105 @@ class MainWindow(wx.Frame):
                                         + measured_property)] = someValue[i]
 
     def updateMap(self, someValue, label):
-        self.mapAxes.plot(someValue, label)
-        # TODO
+        """ Updates UI after receiving new sensor data """
+        if(self.numReadings > 0):
+            vehicle_x = someValue[2]
+            vehicle_y = someValue[3]
+            heading_radians = math.pi*someValue[4]/180
+            self.mapAxes.plot(vehicle_x, vehicle_y, 'bs')
+            count = 0
+            for label in self.labels:
+                if((label[0] != 'g') and self.cfg.ReadBool('connected'+label,
+                                                           False)):
+                    if(label[0] == 'u'):
+                        color = 'y'
+                        db = -1*self.cfg.ReadFloat('DB1')/100
+                    else:
+                        color = 'r'
+                        db = -1*(self.cfg.ReadFloat('DB1')
+                                 + self.cfg.ReadFloat('DB2'))/100
+                    if(label[0] == 'e'):
+                        color = 'g'
+                        index = self.cfg.ReadInt('IE' + label[1])
+                        accumulator = 0
+                        for i in range(index):
+                            accumulator += self.cfg.ReadFloat('D' + label[1] + str(i+1))
+                        if(label[1] == 'L'):
+                            ds = -1*accumulator/100
+                        else:
+                            ds = accumulator/100
+                        ds += self.cfg.ReadFloat('DE'+label[1])/100
+                    else:
+                        accumulator = 0
+                        for i in range(int(label[2])):
+                            accumulator += self.cfg.ReadFloat('D' + label[1] + str(i+1))
+                        if(label[1] == 'L'):
+                            ds = -1*accumulator/100
+                        else:
+                            ds = accumulator/100
+                    sensor_x = (vehicle_x + ds*math.sin(heading_radians)
+                                - db*math.cos(heading_radians))
+                    sensor_y = (vehicle_y - ds*math.cos(heading_radians)
+                                - db*math.sin(heading_radians))
+                    self.mapAxes.plot(sensor_x, sensor_y, marker='P',
+                                      color=color, markerfacecolor=color)
+                    print(label)
+                    count += 1
+                self.mapPanel.refresh()
+
+    def processGPS(self, someValue, label):
+        """ Estimates heading and velocity from GPS readings """
+        new_longitude = math.pi*someValue[0]/180
+        new_latitude = math.pi*someValue[1]/180
+        if(self.numReadings == 0):
+            self.origin_time = time.time()
+            self.origin_latitude = new_latitude
+            self.origin_longitude = new_longitude
+            a = 6378137  # semimajor axis
+            b = 6356752.3142  # semiminor axis
+            h = 20  # elevation
+            c = math.sqrt((a*math.cos(self.origin_latitude))**2
+                          + (b*math.sin(self.origin_latitude))**2)
+            self.F_lon = math.cos(self.origin_latitude)*((a**2/c) + h)
+            self.F_lat = (((a*b)**2/c**3) + h)
+            return [180*new_longitude/math.pi, 180*new_latitude/math.pi,
+                    0, 0, 0, 0, 0]
+        else:
+            new_time = time.time()-self.origin_time
+            gps_x = (new_longitude-self.origin_longitude)*self.F_lon
+            gps_y = (new_latitude-self.origin_latitude)*self.F_lat
+            old_time = self.previous_measurements[label+'/Time']
+            old_x = self.previous_measurements[label+'/X']
+            old_y = self.previous_measurements[label+'/Y']
+            heading_radians = math.atan2(gps_y-old_y, gps_x-old_x)
+            velocity = (math.sqrt((gps_x-old_x)**2+(gps_y-old_y)**2)
+                        / (new_time-old_time))
+            heading = 180*heading_radians/math.pi
+            if((label[1] == 'L') and self.cfg.HasEntry('DGLX')):
+                dgx = self.cfg.ReadFloat('DGLX')/100
+                dgy = self.cfg.ReadFloat('DGLY')/100
+                vehicle_x = (gps_x + dgx*math.sin(heading_radians)
+                             - dgy*math.cos(heading_radians))
+                vehicle_y = (gps_y - dgx*math.cos(heading_radians)
+                             - dgy*math.sin(heading_radians))
+            else:
+                if((label[1] == 'R') and self.cfg.HasEntry('DGRX')):
+                    dgx = self.cfg.ReadFloat('DGRX')/100
+                    dgy = self.cfg.ReadFloat('DGRY')/100
+                    vehicle_x = (gps_x - dgx*math.sin(heading_radians)
+                                 - dgy*math.cos(heading_radians))
+                    vehicle_y = (gps_y + dgx*math.cos(heading_radians)
+                                 - dgy*math.sin(heading_radians))
+                else:
+                    wx.MessageBox(("The dimensions in Layout have not been "
+                                   + "properly set"),
+                                  'Empty port', wx.OK | wx.ICON_WARNING)
+                    return 0
+            return [180*new_longitude/math.pi, 180*new_latitude/math.pi,
+                    vehicle_x, vehicle_y, heading, velocity, new_time]
 
     def logSettings(self):
+        """ Append settings to log """
         self.logText.AppendText('**************Settings-Start**************\n')
         more, value, index = self.cfg.GetFirstEntry()
         while(more):
@@ -383,6 +489,7 @@ class MainWindow(wx.Frame):
         self.logText.AppendText('**************Settings-End****************\n')
 
     def getLabels(self):
+        """ Produces list of sensor labels """
         num_sensors = self.cfg.ReadInt('numSensors', 1)
         labels = []
         device_tuples = list(devices.values())
@@ -401,7 +508,19 @@ class MainWindow(wx.Frame):
         return labels
 
     def disconnect(self):
+        """ Disconnect from all serial sensors """
         all_devices = list(self.label_to_device.values())
         for device in all_devices:
             device.close()
         self.label_to_device = {}
+
+    def clearVariables(self):
+        self.labels = self.getLabels()
+        self.numReadings = 0
+        self.lastRecord = [0]
+        self.previous_measurements = {}
+        self.origin_longitude = 180
+        self.origin_latitude = 90
+        self.F_lon = 0
+        self.F_lat = 0
+        self.origin_time = 0
