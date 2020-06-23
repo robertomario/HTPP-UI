@@ -47,15 +47,15 @@ class LayoutDialog(wx.Dialog):
             self.addLabelledCtrl(pnl, vbox1, "DL"+str(i+1))
         for i in range(num_sensors):
             self.addLabelledCtrl(pnl, vbox1, "DR"+str(i+1))
-        if(self.settings.ReadBool('connectedGPSL', False)):
+        if(self.settings.ReadBool('connectedgL', False)):
             self.addLabelledCtrl(pnl, vbox1, "DGLX")
             self.addLabelledCtrl(pnl, vbox1, "DGLY")
-        if(self.settings.ReadBool('connectedGPSR', False)):
+        if(self.settings.ReadBool('connectedgR', False)):
             self.addLabelledCtrl(pnl, vbox1, "DGRX")
             self.addLabelledCtrl(pnl, vbox1, "DGRY")
-        if(self.settings.ReadBool('connectedEnvironmentalL', False)):
+        if(self.settings.ReadBool('connectedeL', False)):
             self.addLabelledCtrl(pnl, vbox1, "IEL")
-        if(self.settings.ReadBool('connectedEnvironmentalR', False)):
+        if(self.settings.ReadBool('connectedeR', False)):
             self.addLabelledCtrl(pnl, vbox1, "IER")
 
         pnl.SetSizer(vbox1)
@@ -95,6 +95,10 @@ class LayoutDialog(wx.Dialog):
     def getSettings(self):
         """ return settings """
         return self.settings
+
+    def getSettingsList(self):
+        """ return keys of settings modified in this dialog """
+        return list(self.setting_to_control.keys())
 
     def addLabelledCtrl(self, panel, boxSizer, label):
         st = wx.StaticText(panel, label=label)

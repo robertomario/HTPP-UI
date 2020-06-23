@@ -6,14 +6,13 @@ from datetime import datetime
 import time
 import os
 
-import pynmea2
-import serial
 import wx
 
 from .plot_notebook import Plot, PlotNotebook
 from .repeated_timer import RepeatedTimer
 from .layout_dialog import LayoutDialog
-from .ports_dialog import PortsDialog
+from .ports_dialog import PortsDialog, devices
+from .sensors import openPort, getSensorReading
 
 
 # Dict to hold what sensor is the origin for each measured variable
@@ -22,24 +21,10 @@ from .ports_dialog import PortsDialog
 # 2 >> GPS
 # 3 >> Environmental
 variables = {
-    'CI': 0,
-    'NDRE': 0,
-    'NDVI': 0,
-    'proxy Distance': 0,
-    'proxy LAI': 0,
-    'proxy CCC': 0,
-    'Red-Edge': 0,
-    'NIR': 0,
-    'Red': 0,
-    'Distance': 1,
-    'Latitude': 2,
-    'Longitude': 2,
-    'Canopy Temperature': 3,
-    'Air Temperature': 3,
-    'Humidity': 3,
-    'Reflected PAR': 3,
-    'Incident PAR': 3,
-    'Pressure': 3
+    'm': ['CI', 'NDRE', 'NDVI', 'proxy Distance', 'proxy LAI', 'proxy CCC', 'Red-Edge', 'NIR', 'Red'],
+    'u': ['Distance'],
+    'g': ['Latitude', 'Longitude'],
+    'e': ['Canopy Temperature', 'Air Temperature', 'Humidity', 'Reflected PAR', 'Incident PAR', 'Pressure']
 }
 
 
@@ -49,17 +34,12 @@ class MainWindow(wx.Frame):
     def __init__(self, *args, **kwargs):
         """ Create new window """
         super(MainWindow, self).__init__(*args, **kwargs)
-        self.cfg = wx.Config('HHPconfig')
-        if not self.cfg.Exists('multispectralConnected'):
-            self.cfg.WriteBool('multispectralConnected', False)
-            self.cfg.Write('multispectralPort', '')
-            self.cfg.WriteBool('ultrasonicConnected', False)
-            self.cfg.Write('ultrasonicPort', '')
-            self.cfg.WriteBool('GPSConnected', False)
-            self.cfg.Write('GPSPort', '')
+        self.cfg = wx.Config('HTPPconfig')
+        self.cfg.WriteBool('notEmpty', True)
         self.numReadings = 0
         self.lastRecord = [0]
-        self.axes = []
+        self.axes = {}
+        self.label_to_device = {}
         self.initUI()
 
     def initUI(self):
@@ -86,6 +66,9 @@ class MainWindow(wx.Frame):
         layoutmi = wx.MenuItem(settingsMenu, wx.ID_ANY, '&Layout')
         settingsMenu.Append(layoutmi)
         self.Bind(wx.EVT_MENU, self.OnLayout, layoutmi)
+        clearmi = wx.MenuItem(settingsMenu, wx.ID_ANY, '&Clear')
+        settingsMenu.Append(clearmi)
+        self.Bind(wx.EVT_MENU, self.OnClear, clearmi)
         menubar.Append(settingsMenu, '&Settings')
 
         helpMenu = wx.Menu()
@@ -111,6 +94,7 @@ class MainWindow(wx.Frame):
         st2 = wx.StaticText(backgroundPanel, label='Log:')
         self.logText = wx.TextCtrl(backgroundPanel, style=wx.TE_MULTILINE
                                    | wx.TE_READONLY)
+        self.logSettings()
         leftBox.Add(st1, proportion=0, flag=wx.ALL)
         leftBox.Add(mapPanel, wx.ID_ANY, wx.EXPAND | wx.ALL, 20)
         leftBox.Add(st2, proportion=0, flag=wx.ALL)
@@ -119,16 +103,18 @@ class MainWindow(wx.Frame):
         middleBox = wx.BoxSizer(wx.VERTICAL)
         st3 = wx.StaticText(backgroundPanel, label='Plot:')
         plotter = PlotNotebook(backgroundPanel)
-        variable_names = list(variables.keys())
+        variable_names = []
+        for namelist in list(variables.values()):
+            variable_names = variable_names + namelist
         for name in variable_names:
-            self.axes.append(plotter.add(name).gca())
+            self.axes[name] = plotter.add(name).gca()
         middleBox.Add(st3, proportion=0, flag=wx.ALL)
         middleBox.Add(plotter, proportion=7, flag=wx.EXPAND | wx.ALL,
                       border=20)
 
         rightBox = wx.BoxSizer(wx.VERTICAL)
-        panel4 = wx.Panel(backgroundPanel)
-        panel4.SetBackgroundColour('#000049')
+        btn_connect = wx.ToggleButton(backgroundPanel, label='Connect')
+        btn_connect.Bind(wx.EVT_TOGGLEBUTTON, self.OnConnect)
         btn1 = wx.Button(backgroundPanel, label='Start')
         btn2 = wx.Button(backgroundPanel, label='Measure')
         btn3 = wx.Button(backgroundPanel, label='Erase')
@@ -137,7 +123,8 @@ class MainWindow(wx.Frame):
         btn2.Bind(wx.EVT_BUTTON, self.OnMeasure)
         btn3.Bind(wx.EVT_BUTTON, self.OnErase)
         btn4.Bind(wx.EVT_BUTTON, self.OnStop)
-        rightBox.Add(panel4, proportion=3, flag=wx.EXPAND | wx.ALL, border=20)
+        rightBox.Add(btn_connect, proportion=1, flag=wx.EXPAND | wx.ALL,
+                     border=20)
         rightBox.Add(btn1, proportion=1, flag=wx.EXPAND | wx.ALL, border=20)
         rightBox.Add(btn2, proportion=1, flag=wx.EXPAND | wx.ALL, border=20)
         rightBox.Add(btn3, proportion=1, flag=wx.EXPAND | wx.ALL, border=20)
@@ -151,7 +138,7 @@ class MainWindow(wx.Frame):
         backgroundPanel.SetSizer(outerBox)
 
         self.Maximize()
-        self.SetTitle('HandHeld Plant Phenotyping')
+        self.SetTitle('High-Throughput Plant Phenotyping Platform')
         self.Centre()
 
     def OnNew(self, e):
@@ -161,11 +148,10 @@ class MainWindow(wx.Frame):
                                        'Question',
                                        wx.YES_NO | wx.NO_DEFAULT | wx.ICON_QUESTION)
         dialogFlag = confirmDiag.ShowModal()
-        print(dialogFlag)
         if(dialogFlag == wx.ID_YES):
             self.logText.SetValue('')
             self.numReadings = 0
-        # confirmDiag.Destroy()
+            self.logSettings()
 
     def OnSave(self, e):
         """ Toolbar option to save and reset log """
@@ -198,16 +184,12 @@ class MainWindow(wx.Frame):
         dialogFlag = pDialog.ShowModal()
         if(dialogFlag == wx.ID_OK):
             results = pDialog.getSettings()
-            self.cfg.WriteBool('multispectralConnected',
-                               results.ReadBool('multispectralConnected'))
-            self.cfg.Write('multispectralPort',
-                           results.Read('multispectralPort'))
-            self.cfg.WriteBool('ultrasonicConnected',
-                               results.ReadBool('ultrasonicConnected'))
-            self.cfg.Write('ultrasonicPort', results.Read('ultrasonicPort'))
-            self.cfg.WriteBool('GPSConnected',
-                               results.ReadBool('GPSConnected'))
-            self.cfg.Write('GPSPort', results.Read('GPSPort'))
+            labels = self.getLabels()
+            for label in labels:
+                self.cfg.WriteBool('connected'+label,
+                                   results.ReadBool('connected' + label))
+                self.cfg.Write('port'+label, results.Read('port' + label))
+            self.logSettings()
         pDialog.Destroy()
 
     def OnLayout(self, e):
@@ -216,17 +198,54 @@ class MainWindow(wx.Frame):
         dialogFlag = lDialog.ShowModal()
         if(dialogFlag == wx.ID_OK):
             results = lDialog.getSettings()
-            self.cfg.WriteBool('multispectralConnected',
-                               results.ReadBool('multispectralConnected'))
-            self.cfg.Write('multispectralPort',
-                           results.Read('multispectralPort'))
-            self.cfg.WriteBool('ultrasonicConnected',
-                               results.ReadBool('ultrasonicConnected'))
-            self.cfg.Write('ultrasonicPort', results.Read('ultrasonicPort'))
-            self.cfg.WriteBool('GPSConnected',
-                               results.ReadBool('GPSConnected'))
-            self.cfg.Write('GPSPort', results.Read('GPSPort'))
+            settings_list = lDialog.getSettingsList()
+            for setting_key in settings_list:
+                if(setting_key[0] == 'D'):
+                    self.cfg.WriteFloat(setting_key,
+                                        results.ReadFloat(setting_key))
+                if(setting_key[0] == 'I'):
+                    self.cfg.WriteInt(setting_key,
+                                      results.ReadInt(setting_key))
+            self.logSettings()
         lDialog.Destroy()
+
+    def OnClear(self, e):
+        """ Toolbar option to clear all settings """
+        confirmDiag = wx.MessageDialog(None,
+                                       'Are you sure you want to clear the settings?',
+                                       'Question',
+                                       wx.YES_NO | wx.NO_DEFAULT | wx.ICON_QUESTION)
+        dialogFlag = confirmDiag.ShowModal()
+        if(dialogFlag == wx.ID_YES):
+            all_config_keys = []
+            more, value, index = self.cfg.GetFirstEntry()
+            while(more):
+                all_config_keys.append(value)
+                more, value, index = self.cfg.GetNextEntry(index)
+            all_config_keys.remove('notEmpty')
+            for key in all_config_keys:
+                self.cfg.DeleteEntry(key)
+
+    def OnConnect(self, e):
+        """ Toggle button action to connect/disconnect from sensors """
+        btn = e.GetEventObject()
+        is_pressed = btn.GetValue()
+        if(is_pressed):
+            self.label_to_device = {}
+            labels = self.getLabels()
+            for label in labels:
+                if(self.cfg.ReadBool('connected' + label, False)):
+                    port = self.cfg.Read('port' + label)
+                    if(port == ''):
+                        wx.MessageBox(("The port for " + label
+                                      + "has not been properly selected"),
+                                      'Empty port', wx.OK | wx.ICON_WARNING)
+                        break
+                    else:
+                        device = openPort(port, label)
+                        self.label_to_device[label] = device
+        else:
+            self.disconnect()
 
     def OnStart(self, e):
         """ Button action to take measurements periodically """
@@ -234,7 +253,7 @@ class MainWindow(wx.Frame):
 
     def OnMeasure(self, e):
         """ Button action to take one measurement """
-        self.readAll()
+        self.getAllReadings()
 
     def OnErase(self, e):
         """ Button action to delete last measurement from log """
@@ -252,111 +271,82 @@ class MainWindow(wx.Frame):
         """ Display text for debugging the OnStart method """
         self.logText.AppendText("Hi, Roberto \n")
 
-    def readAll(self):
+    def getAllReadings(self):
         """ Get readings from all sensors """
-        connected = [self.cfg.ReadBool('multispectralConnected'),
-                     self.cfg.ReadBool('ultrasonicConnected'),
-                     self.cfg.ReadBool('GPSConnected')]
-        if(any(connected)):
-            self.lastRecord.append(self.logText.GetLastPosition())
-            self.logText.AppendText('*****'+str(self.numReadings)+'*****\n')
-            if(connected[0]):
-                mr = self.getMultispectralReading()
-                self.updateUI(mr)
-            if(connected[1]):
-                ur = self.getUltrasonicReading()
-                self.updateUI(ur)
-            if(connected[2]):
-                gr = self.getGPSReading()
-                self.updateUI(gr)
-                # updateMap(gr)
-            self.numReadings += 1
+        self.lastRecord.append(self.logText.GetLastPosition())
+        self.logText.AppendText('*****'+str(self.numReadings)+'*****\n')
+        labels = self.getLabels()
+        for label in labels:
+            if(self.cfg.ReadBool('connected' + label, False)):
+                reading = getSensorReading(self.label_to_device[label], label)
+                self.updateUI(reading, label)
+        self.numReadings += 1
 
-    def getMultispectralReading(self, numValues=10):
-        """ Get reading from multispectral sensor """
-        port = self.cfg.Read('multispectralPort')
-        print(port)
-        serialCropCircle = serial.Serial(port, 38400)
-        ndre = []
-        ndvi = []
-        redEdge = []
-        nir = []
-        red = []
-        for i in range(numValues):
-            message = serialCropCircle.readline().strip().decode()
-            measurements = message.split(',')
-            measurements = [float(i) for i in measurements]
-            ndre.append(measurements[0])
-            ndvi.append(measurements[1])
-            redEdge.append(measurements[2])
-            nir.append(measurements[3])
-            red.append(measurements[4])
-        finalMeasurement = [sum(ndre), sum(ndvi), sum(redEdge), sum(nir),
-                            sum(red)]
-        finalMeasurement = [i/numValues for i in finalMeasurement]
-        serialCropCircle.close()
-        print(finalMeasurement)
-        return finalMeasurement
+    def updateUI(self, someValue, label):
+        self.updateLog(someValue, label)
+        self.updatePlot(someValue, label)
+        if(label[0] == 'g'):
+            self.updateMap(someValue, label)
 
-    def getUltrasonicReading(self, numValues=10):
-        """ Get reading from ultrasonic sensor """
-        serialUltrasonic = serial.Serial(self.cfg.Read('ultrasonicPort'),
-                                         38400)
-        count = -1
-        finalMeasurement = 0
-        index = 0
-        message = b''
-        charList = [b'0', b'0', b'0', b'0', b'0']
-        while(count < numValues):
-            newChar = serialUltrasonic.read()
-            if(newChar == b'\r'):
-                count += 1
-                message = b''.join(charList)
-                measurement = 0.003384*25.4*int(message)
-                finalMeasurement += measurement
-                message = b''
-                index = 0
-            else:
-                charList[index] = newChar
-                index += 1
-                if(index > 5):
-                    index = 0
-        serialUltrasonic.close()
-        return finalMeasurement/numValues
-
-    def getGPSReading(self, numValues=5):
-        """ Get reading from GPS sensor """
-        serialGPS = serial.Serial(self.cfg.Read('GPSPort'), 9600)
-        i = 0
-        while(i < numValues):
-            message = serialGPS.readline().strip().decode()
-            if(message[0:6] == '$GPGGA' or message[0:6] == '$GPGLL'):
-                i += 1
-                parsedMessage = pynmea2.parse(message)
-                finalMeasurement = [parsedMessage.longitude,
-                                    parsedMessage.latitude]
-        serialGPS.close()
-        return finalMeasurement
-
-    def updateUI(self, someValue):
+    def updateLog(self, someValue, label):
         """ Update UI after receiving new sensor data """
         if(someValue is not None):
             ts = datetime.fromtimestamp(time.time()) \
                          .strftime('%Y-%m-%d %H:%M:%S')
-            if(isinstance(someValue, list)):
-                if(len(someValue) >= 5):
-                    # CropCircle
-                    self.logText.AppendText(('m;' + ts + ';'
-                                            + str(someValue)[1:-1] + '\n'))
-                    # for i in range(5):
-                    #   self.axes[i].plot()
-                else:
-                    # GPS
-                    self.logText.AppendText(('g;' + ts + ';'
-                                            + str(someValue)[1:-1] + '\n'))
-            else:
-                # Ultrasonic
-                self.logText.AppendText('u;'+ts+';'+str(someValue)+'\n')
+            self.logText.AppendText((label + ';' + ts + ';'
+                                    + str(someValue)[1:-1] + '\n'))
         else:
-            # None
             pass
+
+    def updatePlot(self, someValue, label):
+        sensor_type = label[0]
+        measured_properties = variables[sensor_type]
+        for measured_property in measured_properties:
+            self.axes[measured_property].plot(someValue, label)
+            # TODO
+
+    def updateMap(self, someValue, label):
+        self.mapAxes.plot(someValue, label)
+        # TODO
+
+    def logSettings(self):
+        self.logText.AppendText('**************Settings-Start**************\n')
+        more, value, index = self.cfg.GetFirstEntry()
+        while(more):
+            initial = value[0]
+            if(value != 'notEmpty'):
+                if((initial == 'I') or (initial == 'n')):
+                    property = str(self.cfg.ReadInt(value))
+                if(initial == 'D'):
+                    property = str(self.cfg.ReadFloat(value))
+                if(initial == 'c'):
+                    property = str(self.cfg.ReadBool(value))
+                if(initial == 'p'):
+                    property = self.cfg.Read(value)
+                self.logText.AppendText('{' + value + ': ' + property + '}\n')
+            more, value, index = self.cfg.GetNextEntry(index)
+        self.logText.AppendText('**************Settings-End****************\n')
+
+    def getLabels(self):
+        num_sensors = self.cfg.ReadInt('numSensors', 1)
+        labels = []
+        device_tuples = list(devices.values())
+        for device_tuple in device_tuples:
+            name = device_tuple[0]
+            scaling = device_tuple[1]
+            initial = name[0].lower()
+            if(scaling):
+                for i in range(num_sensors):
+                    labels.append(initial+'L'+str(i+1))
+                for i in range(num_sensors):
+                    labels.append(initial+'R'+str(i+1))
+            else:
+                labels.append(initial+'L')
+                labels.append(initial+'R')
+        return labels
+
+    def disconnect(self):
+        all_devices = list(self.label_to_device.values())
+        for device in all_devices:
+            device.close()
+        self.label_to_device = {}

@@ -8,7 +8,12 @@ import wx
 from src.main_window import MainWindow
 
 if __name__ == '__main__':
-    app = wx.App()
-    mw = MainWindow(None)
-    mw.Show()
-    app.MainLoop()
+    try:
+        app = wx.App()
+        mw = MainWindow(None)
+        mw.Show()
+        app.MainLoop()
+    except Exception as e:
+        print(str(e))
+    finally:
+        mw.disconnect()
