@@ -22,17 +22,39 @@ class Plot(wx.Panel):
         self.SetSizer(sizer)
 
     def refresh(self):
+        """ Function to tell the Plot to actually implement the latest
+            modifications
+
+        Documentation for this backend is kinda poor, but basically whenever
+        something important needs to be done, it will only work if called from
+        the FigureCanvas, not the Figure
+        """
         self.canvas.draw_idle()
 
     def clear(self):
+        """ Function to clear the Axes of the Figure """
         self.figure.gca().cla()
 
     def redoLegend(self, device_name, scaling, num_sensors):
+        """ Remove legend and create a new one
+
+        Used when the number of sensors changes (from Ports dialog)
+        """
         ax = self.figure.gca()
         ax.get_legend().remove()
         self.addCustomLegend(device_name, scaling, num_sensors)
 
     def addCustomLegend(self, device_name, scaling, num_sensors):
+        """ Create legend for each variable
+
+        Legend elements are defined for as many sensors as there are.
+        The colors are given with the C0, C1, etc format, which allows to
+        cycle. I suspect the current colormap goes up to 10 before repeating
+        itself.
+        The label is in the form of mL1, gR, etc.
+        The legend will appear to the right of the Axes, outside the box,
+        aligned with its top.
+        """
         ax = self.figure.gca()
         if(scaling):
             legend_elements_L = [Line2D([0], [0], marker='o',
@@ -85,12 +107,25 @@ class PlotNotebook(wx.Panel):
             page.refresh()
 
     def clear(self):
+        """ Clear all plots """
         for i in range(self.nb.GetPageCount()):
             page = self.nb.GetPage(i)
             page.clear()
             page.refresh()
 
     def redoLegend(self, variables, devices, num_sensors):
+        """ Redo legends for all plots
+
+        Args:
+            variables (dict): Connects sensors with the variables they measure
+            devices (dict): Connects sensors with their full names and how they
+                            scale
+            num_sensors (int): Number of scaling sensors on each side of the
+                               platform as defined in the Ports dialog
+        This loop leverages that the same order was used when originally
+        populating the notebook with pages.
+        Still, I suspect there is an easier way to do it.
+        """
         i = 0
         for device_name in list(variables.keys()):
             variable_names = variables[device_name]

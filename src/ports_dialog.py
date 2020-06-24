@@ -9,7 +9,15 @@ from wx.lib.scrolledpanel import ScrolledPanel
 import serial
 import wx
 
-
+# Dict to hold the sensor names and scaling behavior
+# m >> Multispectral
+# u >> Ultrasonic
+# g >> GPS
+# e >> Environmental
+# In this context, the scaling of the sensor means that the system could
+# incorporate different numbers of that sensor without any limit other than
+# how many there are available. On the other hand, it would be unexpected to
+# have more than 2 GPS or Environmental sensors.
 devices = {
     'm': ('Multispectral', True),
     'u': ('Ultrasonic', True),
@@ -19,7 +27,21 @@ devices = {
 
 
 class PortsDialog(wx.Dialog):
-    """ Class to define dialog window """
+    """ Class to define dialog window
+
+    Settings in this dialog are of 3 types:
+    numSensors: Unique setting defining how many of the scalable sensors
+                there are on each side of the system. Many controls depend on
+                its value to know how many times to repeat their operations
+    connected: Boolean indicating if sensor is connected. If False, the
+                ComboBox to select the port will be disabled. There is one
+                for each sensor. They have a suffix of the style mL1 or gR.
+                See MainWindow.getLabel()
+    port: String indicating where the sensor is connected. There is one for
+            each connected sensor. In Windows, they are of the format 'COM3'.
+            They have a suffix of the style mL1 or gR.
+            See MainWindow.getLabel()
+    """
 
     def __init__(self, settings, *args, **kw):
         """ Create new dialog """
@@ -111,7 +133,12 @@ class PortsDialog(wx.Dialog):
         cb.Enable(is_connected)
 
     def OnNumberChange(self, e):
-        """ Change number of sensor units """
+        """ Change number of sensor units
+
+        When the number of sensors connected changes, the elements of the
+        dialog are destroyed and initUI() is called again to ensure there are
+        as many controls as sensors
+        """
         intc = e.GetEventObject()
         num_sensors = intc.GetValue()
         if(num_sensors is not None):
@@ -120,7 +147,7 @@ class PortsDialog(wx.Dialog):
             self.Layout()
 
     def getSettings(self):
-        """ return settings """
+        """ Return settings """
         return self.settings
 
     # https://stackoverflow.com/questions/12090503/listing-available-com-ports-with-python
@@ -153,10 +180,28 @@ class PortsDialog(wx.Dialog):
                 pass
         return result
 
-    def addCheckComboBoxes(self, boxSizer, pnl, comboOptions,
-                           name, side, number=None):
-        """ Add a combobox and a checkbox that controls if the former is
-        enabled """
+    def addCheckComboBoxes(self, boxSizer, pnl, comboOptions, name, side,
+                           number=None):
+        """ Add a combobox and a checkbox that controls if it is enabled
+
+        Args:
+            boxSizer (wx.BoxSizer): BoxSizer that will hold everything created
+                                    in this function
+            pnl (wx.Panel): Panel to be parent of the elements created, since
+                            BoxSizers cannot be used as parent
+            comboOptions (list): List of detected ports
+            name (str): Name of the sensors related to the controls. Used to
+                        create labels of the style mL1 or gR
+            side (str): 'L' or 'R'. Used to create labels of the style mL1 or
+                        gR
+            number (int): If None, means the sensor does not scale. Used to
+                          create labels of the style mL1 or gR
+        Besides creating the mentioned controls, the function adds them to the
+        attributes checkbox_to_combobox and setting_to_checkbox for later use.
+        These dictionaries allow to remember which checkbox control which
+        combobox
+        Each pair of controls is inside a horizontal BoxSizer for alignment
+        """
         hbox_aux = wx.BoxSizer(wx.HORIZONTAL)
         if(number is None):
             suffix = name[0].lower()+side

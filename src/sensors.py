@@ -17,7 +17,20 @@ def openPort(port, label):
 
 
 def getSensorReading(device_port, label, is_device_ready=True):
-    """ Utility function to select proper function given label """
+    """ Utility function to select proper function given label
+
+    Args:
+        device_port (Serial or str): Either pointer to serial device or name of
+                                     port. is_device_ready needs to match
+        label (str): Label of the style mL1 or gR to know which type of sensor
+                     is being used
+        is_device_ready (boolean): If True, device_port should be a serial
+                                   device e.g. output from openPort(). If
+                                   False, device_port should be the name of the
+                                   port e.g. 'COM3' in Windows
+    Returns:
+        reading (list): Output from one of the get{X}Reading() functions
+    """
     if(is_device_ready):
         if(label[0] == 'm'):
             return getMultispectralReading(device_port)
@@ -39,7 +52,21 @@ def getSensorReading(device_port, label, is_device_ready=True):
 
 
 def getMultispectralReading(device, numValues=10, is_new_model=True):
-    """ Get reading from multispectral sensor """
+    """ Get reading from multispectral sensor
+
+    The multispectral sensors are ACS-430 or ACS-435 from Holland Scientific
+    They work the same way except that the newer model (ACS-435) outputs the
+    values of proxyDistance, proxyLAI, and proxyCCC, while the older model
+    doesn't.
+    Neither of the models outputs CI (Chlorophyll Index), but I chose to
+    compute myself from the reflectance values given because it might be useful
+    for my research.
+    The code currently cannot handle the older model because of the way the
+    variables dictionary is defined
+    Units:
+        proxyDistance: cm
+        default: dimentionless
+    """
     if(is_new_model):
         ci = []
         ndre = []
@@ -90,7 +117,16 @@ def getMultispectralReading(device, numValues=10, is_new_model=True):
 
 
 def getUltrasonicReading(device, numValues=10):
-    """ Get reading from ultrasonic sensor """
+    """ Get reading from ultrasonic sensor
+
+    The ultrasonic sensor is ToughSonic14 from Senix
+    Calibration for this sensor is hard-coded
+    For some reason, when connected to the computer by a serial monitor,
+    instead of creating new messages it seems to modify the same bits over and
+    over. That is why the way this sensor is read differs from the others.
+    Units:
+        mm
+    """
     count = -1
     finalMeasurement = 0
     index = 0
@@ -114,7 +150,15 @@ def getUltrasonicReading(device, numValues=10):
 
 
 def getGPSReading(device, numValues=3):
-    """ Get reading from GPS sensor """
+    """ Get reading from GPS sensor
+
+    The GPS receiver is 19x HVS from Garmin
+    The sensor uses NMEA 0183 encoding for the messages
+    Most of the measurements are ignored and just longitude and latitude are
+    kept
+    Units:
+        longitude, latitude: °
+    """
     i = 0
     while(i < numValues):
         message = device.readline().strip().decode()
@@ -127,7 +171,17 @@ def getGPSReading(device, numValues=3):
 
 
 def getEnvironmentalReading(device, numValues=10):
-    """ Get reading from environmental sensor """
+    """ Get reading from environmental sensor
+
+    The environmental sensor is DAS43X from Holland Scientific
+    Units:
+        Canopy temperature: °C
+        Relative humidity: %
+        Air temperature: °C
+        Incident PAR: μmol quanta m**−2 s**−1
+        Reflected PAR: μmol quanta m**−2 s**−1
+        Atmospheric pressure: kPa
+    """
     canopyT = []
     humidity = []
     airT = []
@@ -151,7 +205,12 @@ def getEnvironmentalReading(device, numValues=10):
 
 
 def getOpenMultispectralReading(port, numValues=10, is_new_model=True):
-    """ Get reading from multispectral sensor """
+    """ Get reading from multispectral sensor
+
+    These functions differ from the get{X}Reading() in that they open and close
+    the port with the serial device themselves. Sometimes this is preferred to
+    avoid errors that could be raised while the ports are open
+    """
     serialCropCircle = serial.Serial(port, 38400)
     if(is_new_model):
         ci = []

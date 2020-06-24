@@ -17,11 +17,11 @@ from .ports_dialog import PortsDialog, devices
 from .sensors import openPort, getSensorReading
 
 
-# Dict to hold what sensor is the origin for each measured variable
-# 0 >> Multispectral
-# 1 >> Ultrasonic
-# 2 >> GPS
-# 3 >> Environmental
+# Dict to hold which sensor is the source for each measured variable
+# m >> Multispectral
+# u >> Ultrasonic
+# g >> GPS
+# e >> Environmental
 variables = {
     'm': ['CI', 'NDRE', 'NDVI', 'proxy Distance', 'proxy LAI', 'proxy CCC',
           'Red-Edge', 'NIR', 'Red'],
@@ -33,7 +33,50 @@ variables = {
 
 
 class MainWindow(wx.Frame):
-    """ Class to define main window """
+    """ Class to define main window
+
+    This class both creates the main window of the UI and controls the
+    operations that are done within it.
+
+    Attr:
+        cfg (wx.ConfigBase): Settings are saved in here, which creates a file
+            in a hidden folder to store values. These values are kept if the
+            program stops running and even if the computers turns off. It uses
+            a key-value system similar to dictionaries
+        btn_test (wx.ToggleButton): Button to toggle in and out of 'Test Mode'
+        logText (wx.TextCtrl): Control where information is logged
+        mapAxes (matplotlib.Axes): Axes to create map plot
+        mapPanel (Plot): Panel containing the Figure where the map is drawn
+        rt (RepeatedTimer): Object to create a new thread on timer periodically
+        axes (dict): Dict to hold the Axes for each measured variables. Keys
+            are of the format 'mL1/NDVI' or 'gR/Latitude'. Used to create the
+            plots
+        label_to_device (dict): Dict to hold the serial devices for each label.
+            Keys are labels of the format 'mL1' or 'gR'. Used to get sensor
+            readings
+        previous_measurements (dict): Dict to hold the measurements taken in
+            the immediately previous set. Keys are of the format 'mL1/NDVI' or
+            'gR/Latitude'. Used to create the plots and process GPS data
+        labels (list): List of all possible labels of the style mL1 or gR given
+            the number of scaling sensors
+        lastRecord (list): List showing positions in the text log where each
+            set of measurements ends. Used to erase the last set of values from
+            the log text
+        origin_longitude (float): Stores value of the first GPS reading to use
+            for conversion to planar coordinates
+        origin_latitude (float): Stores value of the first GPS reading to use
+            for conversion to planar coordinates
+        F_lon (float): Stores value of the first GPS reading to use for
+            conversion to planar coordinates
+        F_lat (float): Stores value of the first GPS reading to use for
+            conversion to planar coordinates
+        origin_time (float): Stores value of the first GPS reading to use for
+            conversion to calculation of velocity
+        numReadings (int): Stores how many sets of measurements have been taken
+            in the current survey. Set back to 0 when log text is cleared or
+            exported to file
+
+    """
 
     def __init__(self, *args, **kwargs):
         """ Create new window """
@@ -48,6 +91,7 @@ class MainWindow(wx.Frame):
 
     def initUI(self):
         """ Define window elements """
+        # Toolbar
         menubar = wx.MenuBar()
 
         fileMenu = wx.Menu()
@@ -83,6 +127,7 @@ class MainWindow(wx.Frame):
 
         self.SetMenuBar(menubar)
 
+        # Window
         backgroundPanel = wx.Panel(self)
         backgroundPanel.SetBackgroundColour('#ededed')
 
@@ -121,18 +166,24 @@ class MainWindow(wx.Frame):
 
         rightBox = wx.BoxSizer(wx.VERTICAL)
         btn_connect = wx.ToggleButton(backgroundPanel, label='Connect')
-        btn1 = wx.ToggleButton(backgroundPanel, label='Start')
-        btn2 = wx.Button(backgroundPanel, label='Measure')
-        btn3 = wx.Button(backgroundPanel, label='Erase')
+        btn_start = wx.ToggleButton(backgroundPanel, label='Start')
+        self.btn_test = wx.ToggleButton(backgroundPanel, label='Test Mode')
+        btn_measure = wx.Button(backgroundPanel, label='Measure')
+        btn_erase = wx.Button(backgroundPanel, label='Erase')
         btn_connect.Bind(wx.EVT_TOGGLEBUTTON, self.OnConnect)
-        btn1.Bind(wx.EVT_TOGGLEBUTTON, self.OnStart)
-        btn2.Bind(wx.EVT_BUTTON, self.OnMeasure)
-        btn3.Bind(wx.EVT_BUTTON, self.OnErase)
+        btn_start.Bind(wx.EVT_TOGGLEBUTTON, self.OnStart)
+        btn_measure.Bind(wx.EVT_BUTTON, self.OnMeasure)
+        btn_erase.Bind(wx.EVT_BUTTON, self.OnErase)
         rightBox.Add(btn_connect, proportion=1, flag=wx.EXPAND | wx.ALL,
                      border=20)
-        rightBox.Add(btn1, proportion=1, flag=wx.EXPAND | wx.ALL, border=20)
-        rightBox.Add(btn2, proportion=1, flag=wx.EXPAND | wx.ALL, border=20)
-        rightBox.Add(btn3, proportion=1, flag=wx.EXPAND | wx.ALL, border=20)
+        rightBox.Add(btn_start, proportion=1, flag=wx.EXPAND | wx.ALL,
+                     border=20)
+        rightBox.Add(self.btn_test, proportion=1, flag=wx.EXPAND | wx.ALL,
+                     border=20)
+        rightBox.Add(btn_measure, proportion=1, flag=wx.EXPAND | wx.ALL,
+                     border=20)
+        rightBox.Add(btn_erase, proportion=1, flag=wx.EXPAND | wx.ALL,
+                     border=20)
 
         outerBox.Add(leftBox, proportion=2, flag=wx.EXPAND | wx.ALL, border=20)
         outerBox.Add(middleBox, proportion=3, flag=wx.EXPAND | wx.ALL,
@@ -146,7 +197,7 @@ class MainWindow(wx.Frame):
         self.Centre()
 
     def OnNew(self, e):
-        """ Toolbar option to reset log without saving"""
+        """ Toolbar option to reset log without saving """
         confirmDiag = wx.MessageDialog(None,
                                        ('Are you sure you want to clear '
                                         + 'the log?'),
@@ -226,7 +277,15 @@ class MainWindow(wx.Frame):
         lDialog.Destroy()
 
     def OnClear(self, e):
-        """ Toolbar option to clear all settings """
+        """ Toolbar option to clear all settings
+
+        This removes every entry from the attribute cfg, except for a dummy
+        entry 'notEmpty' to prevent the ConfigBase of being entirerly empty,
+        which causes it to crash.
+        Not to be confounded with the method clearVariables(), which resets
+        some other attributes whose values are only relevant for the current
+        survey
+        """
         confirmDiag = wx.MessageDialog(None,
                                        ('Are you sure you want to clear '
                                         + 'the settings?'),
@@ -245,7 +304,11 @@ class MainWindow(wx.Frame):
                 self.cfg.DeleteEntry(key)
 
     def OnConnect(self, e):
-        """ Toggle button action to connect/disconnect from sensors """
+        """ Toggle button action to connect/disconnect from sensors
+
+        Besides opening the ports to the serial devices, this method also
+        populates the attribute label_to_device for later use
+        """
         btn = e.GetEventObject()
         is_pressed = btn.GetValue()
         if(is_pressed):
@@ -267,24 +330,41 @@ class MainWindow(wx.Frame):
             self.disconnect()
 
     def OnStart(self, e):
-        """ Button action to take measurements periodically """
-        # self.rt = RepeatedTimer(1, self.sayHi)
+        """ Button action to take measurements periodically
+
+        When clicked for the first time, it will create a RepeatedTimer to call
+        getAllReadings() every second. When clicked again, it will stop the
+        timer.
+        If in 'Test Mode', instead of calling the getAllReadings() method,
+        it will call simulateSensorReadings()
+        """
         btn = e.GetEventObject()
         is_pressed = btn.GetValue()
         if(is_pressed):
             btn.SetLabelText('Stop')
-            self.rt = RepeatedTimer(1, self.simulateSensorReadings)
+            is_test_mode = self.btn_test.GetValue()
+            if(is_test_mode):
+                self.rt = RepeatedTimer(1, self.simulateSensorReadings)
+            else:
+                self.rt = RepeatedTimer(1, self.getAllReadings)
         else:
             btn.SetLabelText('Start')
             self.rt.stop()
 
     def OnMeasure(self, e):
-        """ Button action to take one measurement """
-        # self.getAllReadings()
-        self.simulateSensorReadings()
+        """ Button action to take a single set of measurements
+
+        If in 'Test Mode', instead of calling the getAllReadings() method,
+        it will call simulateSensorReadings()
+        """
+        is_test_mode = self.btn_test.GetValue()
+        if(is_test_mode):
+            self.simulateSensorReadings()
+        else:
+            self.getAllReadings()
 
     def OnErase(self, e):
-        """ Button action to delete last measurement from log """
+        """ Button action to delete last measurement from log text """
         if(self.logText.GetValue() != ''):
             lastPosition = self.logText.GetLastPosition()
             self.logText.Remove(self.lastRecord[-1], lastPosition)
@@ -296,13 +376,18 @@ class MainWindow(wx.Frame):
         self.logText.AppendText("Hi, Roberto \n")
 
     def simulateSensorReadings(self):
-        """ Create random number to pretend behaviour of getAllReadings() """
+        """ Return random numbers to represent behavior of getAllReadings()
+
+        For the GPS output the behavior is not random, but fixed.
+        It is used when in 'Test Mode'
+        """
         self.lastRecord.append(self.logText.GetLastPosition())
         self.logText.AppendText('*****'+str(self.numReadings)+'*****\n')
         for label in self.labels:
             if(self.cfg.ReadBool('connected' + label, False)):
                 if(label[0] == 'g'):
-                    reading = [-73.939830, 45.423804+0.001*self.numReadings]
+                    reading = [-73.939830 + 0.001*self.numReadings,
+                               45.423804 + 0.001*self.numReadings]
                 else:
                     reading = []
                     for i in range(len(variables[label[0]])):
@@ -312,7 +397,13 @@ class MainWindow(wx.Frame):
         self.numReadings += 1
 
     def getAllReadings(self):
-        """ Get readings from all sensors """
+        """ Get readings from all sensors
+
+        Everytime a new measurement arrives, it triggers a call to the
+        updateUI() method
+        It also appends a header to the log text of the style '***0***'
+        Will fail if the Connect button is not activated
+        """
         self.lastRecord.append(self.logText.GetLastPosition())
         self.logText.AppendText('*****'+str(self.numReadings)+'*****\n')
         for label in self.labels:
@@ -322,7 +413,10 @@ class MainWindow(wx.Frame):
         self.numReadings += 1
 
     def updateUI(self, someValue, label):
-        """ Updates UI after receiving new sensor data """
+        """ Updates UI after receiving new sensor data
+
+        This is a general method that calls the more specific ones if necessary
+        """
         if(label[0] == 'g'):
             values = self.processGPS(someValue, label)
             self.updateMap(values, label)
@@ -332,7 +426,7 @@ class MainWindow(wx.Frame):
         self.updatePlot(values, label)
 
     def updateLog(self, someValue, label):
-        """ Update UI after receiving new sensor data """
+        """ Update log text after receiving new sensor data """
         if(someValue is not None):
             ts = datetime.fromtimestamp(time.time()) \
                          .strftime('%Y-%m-%d %H:%M:%S')
@@ -342,11 +436,25 @@ class MainWindow(wx.Frame):
             pass
 
     def updatePlot(self, someValue, label):
-        """ Updates UI after receiving new sensor data """
+        """ Updates plots after receiving new sensor data
+
+        Instead of appending new points to a pre-existing plot, everytime a new
+        point arrives, a new plot is created next to it. Because it is made to
+        match in color and style, it looks as if everything was connected.
+        However, because of this way of updating the plots, the legends need to
+        be created manually.
+        Besides creating new plots, this method updates the attribute
+        previous_measurements
+        """
         sensor_type = label[0]
         if(devices[sensor_type][1]):
+            # color_number is to form the format 'C0' to cycle over colors
+            # The value of 1 needs to be substracted because the 'C0' format
+            # uses '0 to n-1' indexing, while the labels use '1 to n'
             color_number = int(label[2])-1
             if(label[1] == 'R'):
+                # The order was made so that all right sensors would go after
+                # all the left ones
                 color_number += self.cfg.ReadInt('numSensors', 1)
         else:
             if(label[1] == 'L'):
@@ -355,6 +463,8 @@ class MainWindow(wx.Frame):
                 color_number = 1
         measured_properties = variables[sensor_type]
         for i, measured_property in enumerate(measured_properties):
+            # The first set of measurements produce just dots, while the
+            # subsequent ones produce lines connecting those dots
             if(self.numReadings == 0):
                 self.axes[measured_property] \
                     .plot(self.numReadings, someValue[i], marker='o',
@@ -372,38 +482,49 @@ class MainWindow(wx.Frame):
                                         + measured_property)] = someValue[i]
 
     def updateMap(self, someValue, label):
-        """ Updates UI after receiving new sensor data """
+        """ Update map after receiving new sensor data
+
+        Place a marker in the locations of the map where the vehicle and
+        the sensors are (except the GPS receiver itself).
+        It uses the Settings from the Layout dialog to calculate relative
+        positions and convert from the world coordinate system to that of the
+        vehicle (or vice-versa)
+        The first set of readings doesn't produce changes in the plot because
+        at least two measurements are required to compute the heading, which
+        in turn is required to know how to orient the sensor markers
+        """
         if(self.numReadings > 0):
             vehicle_x = someValue[2]
             vehicle_y = someValue[3]
             heading_radians = math.pi*someValue[4]/180
             self.mapAxes.plot(vehicle_x, vehicle_y, 'bs')
-            count = 0
             for label in self.labels:
                 if((label[0] != 'g') and self.cfg.ReadBool('connected'+label,
                                                            False)):
                     if(label[0] == 'u'):
                         color = 'y'
-                        db = -1*self.cfg.ReadFloat('DB1')/100
+                        db = self.cfg.ReadFloat('DB1')/100
                     else:
                         color = 'r'
-                        db = -1*(self.cfg.ReadFloat('DB1')
-                                 + self.cfg.ReadFloat('DB2'))/100
+                        db = (self.cfg.ReadFloat('DB1')
+                              + self.cfg.ReadFloat('DB2'))/100
                     if(label[0] == 'e'):
                         color = 'g'
                         index = self.cfg.ReadInt('IE' + label[1])
                         accumulator = 0
                         for i in range(index):
-                            accumulator += self.cfg.ReadFloat('D' + label[1] + str(i+1))
+                            accumulator += self.cfg.ReadFloat('D' + label[1]
+                                                              + str(i+1))
                         if(label[1] == 'L'):
                             ds = -1*accumulator/100
                         else:
                             ds = accumulator/100
-                        ds += self.cfg.ReadFloat('DE'+label[1])/100
+                        ds += self.cfg.ReadFloat('DE' + label[1])/100
                     else:
                         accumulator = 0
                         for i in range(int(label[2])):
-                            accumulator += self.cfg.ReadFloat('D' + label[1] + str(i+1))
+                            accumulator += self.cfg.ReadFloat('D' + label[1]
+                                                              + str(i+1))
                         if(label[1] == 'L'):
                             ds = -1*accumulator/100
                         else:
@@ -414,21 +535,30 @@ class MainWindow(wx.Frame):
                                 - db*math.sin(heading_radians))
                     self.mapAxes.plot(sensor_x, sensor_y, marker='P',
                                       color=color, markerfacecolor=color)
-                    print(label)
-                    count += 1
                 self.mapPanel.refresh()
 
     def processGPS(self, someValue, label):
-        """ Estimates heading and velocity from GPS readings """
+        """ Estimates heading and velocity from GPS readings
+
+        The first time this method is called in a survey, it defines the
+        conversion to planar coordinate system. Every subsequent call after
+        uses the mentioned conversion to project the measurements and create
+        X and Y values, and also uses the immediately previous measurement to
+        estimate heading and velocity
+        The elevation has been temporarily hard-coded, but it should be made
+        adjustable as a setting
+        The reported X and Y values are of the vehicle defined as the middle
+        point of the toolbar that holds the sensors
+        """
         new_longitude = math.pi*someValue[0]/180
         new_latitude = math.pi*someValue[1]/180
         if(self.numReadings == 0):
             self.origin_time = time.time()
             self.origin_latitude = new_latitude
             self.origin_longitude = new_longitude
-            a = 6378137  # semimajor axis
-            b = 6356752.3142  # semiminor axis
-            h = 20  # elevation
+            a = 6378137  # Earth's semimajor axis
+            b = 6356752.3142  # Earth's semiminor axis
+            h = 20  # Current elevation over sea level
             c = math.sqrt((a*math.cos(self.origin_latitude))**2
                           + (b*math.sin(self.origin_latitude))**2)
             self.F_lon = math.cos(self.origin_latitude)*((a**2/c) + h)
@@ -489,7 +619,12 @@ class MainWindow(wx.Frame):
         self.logText.AppendText('**************Settings-End****************\n')
 
     def getLabels(self):
-        """ Produces list of sensor labels """
+        """ Produces list of sensor labels
+
+        Since many methods need to iterate over all the labels, it is handy to
+        have the attribute labels to keep them available. This method is used
+        to update the value of labels whenever the number of sensors changes
+        """
         num_sensors = self.cfg.ReadInt('numSensors', 1)
         labels = []
         device_tuples = list(devices.values())
@@ -515,6 +650,7 @@ class MainWindow(wx.Frame):
         self.label_to_device = {}
 
     def clearVariables(self):
+        """ Resets the values of attributes any time a new survey starts """
         self.labels = self.getLabels()
         self.numReadings = 0
         self.lastRecord = [0]
