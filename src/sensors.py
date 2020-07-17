@@ -8,10 +8,7 @@ import serial
 
 def openPort(port, label):
     """ Utility function to connect to serial device """
-    if(label[0] == 'g'):
-        baudrate = 9600
-    else:
-        baudrate = 38400
+    baudrate = 38400
     device = serial.Serial(port, baudrate)
     return device
 
@@ -33,22 +30,31 @@ def getSensorReading(device_port, label, is_device_ready=True):
     """
     if(is_device_ready):
         if(label[0] == 'm'):
-            return getMultispectralReading(device_port)
+            function_to_call = getMultispectralReading
         if(label[0] == 'u'):
-            return getUltrasonicReading(device_port)
+            function_to_call = getUltrasonicReading
         if(label[0] == 'g'):
-            return getGPSReading(device_port)
+            function_to_call = getGPSReading
         if(label[0] == 'e'):
-            return getEnvironmentalReading(device_port)
+            function_to_call = getEnvironmentalReading
     else:
         if(label[0] == 'm'):
-            return getOpenMultispectralReading(device_port)
+            function_to_call = getOpenMultispectralReading
         if(label[0] == 'u'):
-            return getOpenUltrasonicReading(device_port)
+            function_to_call = getOpenUltrasonicReading
         if(label[0] == 'g'):
-            return getOpenGPSReading(device_port)
+            function_to_call = getOpenGPSReading
         if(label[0] == 'e'):
-            return getOpenEnvironmentalReading(device_port)
+            function_to_call = getOpenEnvironmentalReading
+    reading = -1
+    try:
+        reading = function_to_call(device_port)
+    except Exception as e:
+        print("Exception found in "+label)
+        print(str(e))
+        reading = getSensorReading(device_port, label, is_device_ready)
+    finally:
+        return reading
 
 
 def getMultispectralReading(device, numValues=10, is_new_model=True):
@@ -81,6 +87,11 @@ def getMultispectralReading(device, numValues=10, is_new_model=True):
             message = device.readline().strip().decode()
             measurements = message.split(',')
             measurements = [float(i) for i in measurements]
+            if(len(measurements)!=8):
+                while(len(measurements)!=8):
+                    message = device.readline().strip().decode()
+                    measurements = message.split(',')
+                    measurements = [float(i) for i in measurements]
             ci.append((measurements[6]/measurements[5])-1)
             ndre.append(measurements[0])
             ndvi.append(measurements[1])
@@ -144,7 +155,7 @@ def getUltrasonicReading(device, numValues=10):
         else:
             charList[index] = newChar
             index += 1
-            if(index > 5):
+            if(index > 4):
                 index = 0
     return [finalMeasurement/numValues]
 
