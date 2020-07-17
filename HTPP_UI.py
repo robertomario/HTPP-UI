@@ -7,7 +7,7 @@ import wx
 
 from src.main_window import MainWindow
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     try:
         app = wx.App()
         mw = MainWindow(None)

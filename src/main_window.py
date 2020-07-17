@@ -23,12 +23,27 @@ from .sensors import openPort, getSensorReading
 # g >> GPS
 # e >> Environmental
 variables = {
-    'm': ['CI', 'NDRE', 'NDVI', 'proxy Distance', 'proxy LAI', 'proxy CCC',
-          'Red-Edge', 'NIR', 'Red'],
-    'u': ['Distance'],
-    'g': ['Latitude', 'Longitude', 'X', 'Y', 'Heading', 'Velocity', 'Time'],
-    'e': ['Canopy Temperature', 'Air Temperature', 'Humidity', 'Reflected PAR',
-          'Incident PAR', 'Pressure']
+    "m": [
+        "CI",
+        "NDRE",
+        "NDVI",
+        "proxy Distance",
+        "proxy LAI",
+        "proxy CCC",
+        "Red-Edge",
+        "NIR",
+        "Red",
+    ],
+    "u": ["Distance"],
+    "g": ["Latitude", "Longitude", "X", "Y", "Heading", "Velocity", "Time"],
+    "e": [
+        "Canopy Temperature",
+        "Air Temperature",
+        "Humidity",
+        "Reflected PAR",
+        "Incident PAR",
+        "Pressure",
+    ],
 }
 
 
@@ -81,8 +96,8 @@ class MainWindow(wx.Frame):
     def __init__(self, *args, **kwargs):
         """ Create new window """
         super(MainWindow, self).__init__(*args, **kwargs)
-        self.cfg = wx.Config('HTPPconfig')
-        self.cfg.WriteBool('notEmpty', True)
+        self.cfg = wx.Config("HTPPconfig")
+        self.cfg.WriteBool("notEmpty", True)
         self.labels = []
         self.axes = {}
         self.label_to_device = {}
@@ -95,41 +110,41 @@ class MainWindow(wx.Frame):
         menubar = wx.MenuBar()
 
         fileMenu = wx.Menu()
-        newmi = wx.MenuItem(fileMenu, wx.ID_NEW, '&New')
+        newmi = wx.MenuItem(fileMenu, wx.ID_NEW, "&New")
         fileMenu.Append(newmi)
         self.Bind(wx.EVT_MENU, self.OnNew, newmi)
-        savemi = wx.MenuItem(fileMenu, wx.ID_SAVE, '&Save')
+        savemi = wx.MenuItem(fileMenu, wx.ID_SAVE, "&Save")
         fileMenu.Append(savemi)
         self.Bind(wx.EVT_MENU, self.OnSave, savemi)
         fileMenu.AppendSeparator()
-        qmi = wx.MenuItem(fileMenu, wx.ID_EXIT, '&Quit')
+        qmi = wx.MenuItem(fileMenu, wx.ID_EXIT, "&Quit")
         fileMenu.Append(qmi)
         self.Bind(wx.EVT_MENU, self.OnQuit, qmi)
-        menubar.Append(fileMenu, '&File')
+        menubar.Append(fileMenu, "&File")
 
         settingsMenu = wx.Menu()
-        portsmi = wx.MenuItem(settingsMenu, wx.ID_PREFERENCES, '&Ports')
+        portsmi = wx.MenuItem(settingsMenu, wx.ID_PREFERENCES, "&Ports")
         settingsMenu.Append(portsmi)
         self.Bind(wx.EVT_MENU, self.OnPorts, portsmi)
-        layoutmi = wx.MenuItem(settingsMenu, wx.ID_ANY, '&Layout')
+        layoutmi = wx.MenuItem(settingsMenu, wx.ID_ANY, "&Layout")
         settingsMenu.Append(layoutmi)
         self.Bind(wx.EVT_MENU, self.OnLayout, layoutmi)
-        clearmi = wx.MenuItem(settingsMenu, wx.ID_ANY, '&Clear')
+        clearmi = wx.MenuItem(settingsMenu, wx.ID_ANY, "&Clear")
         settingsMenu.Append(clearmi)
         self.Bind(wx.EVT_MENU, self.OnClear, clearmi)
-        menubar.Append(settingsMenu, '&Settings')
+        menubar.Append(settingsMenu, "&Settings")
 
         helpMenu = wx.Menu()
-        aboutmi = wx.MenuItem(helpMenu, wx.ID_ABOUT, '&About')
+        aboutmi = wx.MenuItem(helpMenu, wx.ID_ABOUT, "&About")
         helpMenu.Append(aboutmi)
         self.Bind(wx.EVT_MENU, self.OnAbout, aboutmi)
-        menubar.Append(helpMenu, '&Help')
+        menubar.Append(helpMenu, "&Help")
 
         self.SetMenuBar(menubar)
 
         # Window
         backgroundPanel = wx.Panel(self)
-        backgroundPanel.SetBackgroundColour('#ededed')
+        backgroundPanel.SetBackgroundColour("#ededed")
 
         font = wx.SystemSettings.GetFont(wx.SYS_SYSTEM_FONT)
         font.SetPointSize(9)
@@ -137,12 +152,13 @@ class MainWindow(wx.Frame):
         outerBox = wx.BoxSizer(wx.HORIZONTAL)
 
         leftBox = wx.BoxSizer(wx.VERTICAL)
-        st1 = wx.StaticText(backgroundPanel, label='Map:')
+        st1 = wx.StaticText(backgroundPanel, label="Map:")
         self.mapPanel = Plot(backgroundPanel)
         self.mapAxes = self.mapPanel.figure.gca()
-        st2 = wx.StaticText(backgroundPanel, label='Log:')
-        self.logText = wx.TextCtrl(backgroundPanel, style=wx.TE_MULTILINE
-                                   | wx.TE_READONLY)
+        st2 = wx.StaticText(backgroundPanel, label="Log:")
+        self.logText = wx.TextCtrl(
+            backgroundPanel, style=wx.TE_MULTILINE | wx.TE_READONLY
+        )
         self.logSettings()
         leftBox.Add(st1, proportion=0, flag=wx.ALL)
         leftBox.Add(self.mapPanel, wx.ID_ANY, wx.EXPAND | wx.ALL, 20)
@@ -150,63 +166,56 @@ class MainWindow(wx.Frame):
         leftBox.Add(self.logText, wx.ID_ANY, wx.EXPAND | wx.ALL, 20)
 
         middleBox = wx.BoxSizer(wx.VERTICAL)
-        st3 = wx.StaticText(backgroundPanel, label='Plot:')
+        st3 = wx.StaticText(backgroundPanel, label="Plot:")
         self.plotter = PlotNotebook(backgroundPanel)
-        num_sensors = self.cfg.ReadInt('numSensors', 1)
+        num_sensors = self.cfg.ReadInt("numSensors", 1)
         for device_name in list(variables.keys()):
             variable_names = variables[device_name]
             scaling = devices[device_name][1]
             for name in variable_names:
-                self.axes[name] = self.plotter.add(name, device_name, scaling,
-                                                   num_sensors)
+                self.axes[name] = self.plotter.add(
+                    name, device_name, scaling, num_sensors
+                )
 
         middleBox.Add(st3, proportion=0, flag=wx.ALL)
-        middleBox.Add(self.plotter, proportion=7, flag=wx.EXPAND | wx.ALL,
-                      border=20)
+        middleBox.Add(self.plotter, proportion=7, flag=wx.EXPAND | wx.ALL, border=20)
 
         rightBox = wx.BoxSizer(wx.VERTICAL)
-        btn_connect = wx.ToggleButton(backgroundPanel, label='Connect')
-        btn_start = wx.ToggleButton(backgroundPanel, label='Start')
-        self.btn_test = wx.ToggleButton(backgroundPanel, label='Test Mode')
-        btn_measure = wx.Button(backgroundPanel, label='Measure')
-        btn_erase = wx.Button(backgroundPanel, label='Erase')
+        btn_connect = wx.ToggleButton(backgroundPanel, label="Connect")
+        btn_start = wx.ToggleButton(backgroundPanel, label="Start")
+        self.btn_test = wx.ToggleButton(backgroundPanel, label="Test Mode")
+        btn_measure = wx.Button(backgroundPanel, label="Measure")
+        btn_erase = wx.Button(backgroundPanel, label="Erase")
         btn_connect.Bind(wx.EVT_TOGGLEBUTTON, self.OnConnect)
         btn_start.Bind(wx.EVT_TOGGLEBUTTON, self.OnStart)
         btn_measure.Bind(wx.EVT_BUTTON, self.OnMeasure)
         btn_erase.Bind(wx.EVT_BUTTON, self.OnErase)
-        rightBox.Add(btn_connect, proportion=1, flag=wx.EXPAND | wx.ALL,
-                     border=20)
-        rightBox.Add(btn_start, proportion=1, flag=wx.EXPAND | wx.ALL,
-                     border=20)
-        rightBox.Add(self.btn_test, proportion=1, flag=wx.EXPAND | wx.ALL,
-                     border=20)
-        rightBox.Add(btn_measure, proportion=1, flag=wx.EXPAND | wx.ALL,
-                     border=20)
-        rightBox.Add(btn_erase, proportion=1, flag=wx.EXPAND | wx.ALL,
-                     border=20)
+        rightBox.Add(btn_connect, proportion=1, flag=wx.EXPAND | wx.ALL, border=20)
+        rightBox.Add(btn_start, proportion=1, flag=wx.EXPAND | wx.ALL, border=20)
+        rightBox.Add(self.btn_test, proportion=1, flag=wx.EXPAND | wx.ALL, border=20)
+        rightBox.Add(btn_measure, proportion=1, flag=wx.EXPAND | wx.ALL, border=20)
+        rightBox.Add(btn_erase, proportion=1, flag=wx.EXPAND | wx.ALL, border=20)
 
         outerBox.Add(leftBox, proportion=2, flag=wx.EXPAND | wx.ALL, border=20)
-        outerBox.Add(middleBox, proportion=3, flag=wx.EXPAND | wx.ALL,
-                     border=20)
-        outerBox.Add(rightBox, proportion=1, flag=wx.EXPAND | wx.ALL,
-                     border=20)
+        outerBox.Add(middleBox, proportion=3, flag=wx.EXPAND | wx.ALL, border=20)
+        outerBox.Add(rightBox, proportion=1, flag=wx.EXPAND | wx.ALL, border=20)
         backgroundPanel.SetSizer(outerBox)
 
         self.Maximize()
-        self.SetTitle('High-Throughput Plant Phenotyping Platform')
+        self.SetTitle("High-Throughput Plant Phenotyping Platform")
         self.Centre()
 
     def OnNew(self, e):
         """ Toolbar option to reset log without saving """
-        confirmDiag = wx.MessageDialog(None,
-                                       ('Are you sure you want to clear '
-                                        + 'the log?'),
-                                       'Question',
-                                       (wx.YES_NO | wx.NO_DEFAULT
-                                        | wx.ICON_QUESTION))
+        confirmDiag = wx.MessageDialog(
+            None,
+            ("Are you sure you want to clear " + "the log?"),
+            "Question",
+            (wx.YES_NO | wx.NO_DEFAULT | wx.ICON_QUESTION),
+        )
         dialogFlag = confirmDiag.ShowModal()
-        if(dialogFlag == wx.ID_YES):
-            self.logText.SetValue('')
+        if dialogFlag == wx.ID_YES:
+            self.logText.SetValue("")
             self.logSettings()
             self.plotter.clear()
             self.mapPanel.clear()
@@ -215,15 +224,17 @@ class MainWindow(wx.Frame):
 
     def OnSave(self, e):
         """ Toolbar option to save and reset log """
-        rootName = ('data/HTPPLogFile'
-                    + datetime.fromtimestamp(time.time()).strftime('%Y-%m-%d')
-                    + 'X')
+        rootName = (
+            "data/HTPPLogFile"
+            + datetime.fromtimestamp(time.time()).strftime("%Y-%m-%d")
+            + "X"
+        )
         i = 1
-        while(os.path.isfile(rootName+str(i) + '.txt')):
+        while os.path.isfile(rootName + str(i) + ".txt"):
             i += 1
-        finalFilename = rootName + str(i) + '.txt'
+        finalFilename = rootName + str(i) + ".txt"
         self.logText.SaveFile(finalFilename)
-        self.logText.SetValue('')
+        self.logText.SetValue("")
         self.logSettings()
         self.plotter.clear()
         self.mapPanel.clear()
@@ -236,24 +247,30 @@ class MainWindow(wx.Frame):
 
     def OnAbout(self, e):
         """ Toolbar option to show About dialog """
-        wx.MessageBox(("High-Throughput Plant Phenotyping Platform \n"
-                       "Made by Roberto Buelvas\n"
-                       "McGill University, 2020\n"
-                       "Version 0.1\n"),
-                      'About', wx.OK | wx.ICON_INFORMATION)
+        wx.MessageBox(
+            (
+                "High-Throughput Plant Phenotyping Platform \n"
+                "Made by Roberto Buelvas\n"
+                "McGill University, 2020\n"
+                "Version 0.1\n"
+            ),
+            "About",
+            wx.OK | wx.ICON_INFORMATION,
+        )
 
     def OnPorts(self, e):
         """ Toolbar option to open ports dialog window """
         pDialog = PortsDialog(self.cfg, self)
         dialogFlag = pDialog.ShowModal()
-        if(dialogFlag == wx.ID_OK):
+        if dialogFlag == wx.ID_OK:
             results = pDialog.getSettings()
-            num_sensors = results.ReadInt('numSensors', 1)
-            self.cfg.WriteInt('numSensors', num_sensors)
+            num_sensors = results.ReadInt("numSensors", 1)
+            self.cfg.WriteInt("numSensors", num_sensors)
             for label in self.labels:
-                self.cfg.WriteBool('connected'+label,
-                                   results.ReadBool('connected' + label))
-                self.cfg.Write('port'+label, results.Read('port' + label))
+                self.cfg.WriteBool(
+                    "connected" + label, results.ReadBool("connected" + label)
+                )
+                self.cfg.Write("port" + label, results.Read("port" + label))
             self.logSettings()
             self.labels = self.getLabels()
             self.plotter.redoLegend(variables, devices, num_sensors)
@@ -263,16 +280,14 @@ class MainWindow(wx.Frame):
         """ Toolbar option to open ports dialog window """
         lDialog = LayoutDialog(self.cfg, self)
         dialogFlag = lDialog.ShowModal()
-        if(dialogFlag == wx.ID_OK):
+        if dialogFlag == wx.ID_OK:
             results = lDialog.getSettings()
             settings_list = lDialog.getSettingsList()
             for setting_key in settings_list:
-                if(setting_key[0] == 'D'):
-                    self.cfg.WriteFloat(setting_key,
-                                        results.ReadFloat(setting_key))
-                if(setting_key[0] == 'I'):
-                    self.cfg.WriteInt(setting_key,
-                                      results.ReadInt(setting_key))
+                if setting_key[0] == "D":
+                    self.cfg.WriteFloat(setting_key, results.ReadFloat(setting_key))
+                if setting_key[0] == "I":
+                    self.cfg.WriteInt(setting_key, results.ReadInt(setting_key))
             self.logSettings()
         lDialog.Destroy()
 
@@ -286,20 +301,20 @@ class MainWindow(wx.Frame):
         some other attributes whose values are only relevant for the current
         survey
         """
-        confirmDiag = wx.MessageDialog(None,
-                                       ('Are you sure you want to clear '
-                                        + 'the settings?'),
-                                       'Question',
-                                       (wx.YES_NO | wx.NO_DEFAULT
-                                        | wx.ICON_QUESTION))
+        confirmDiag = wx.MessageDialog(
+            None,
+            ("Are you sure you want to clear " + "the settings?"),
+            "Question",
+            (wx.YES_NO | wx.NO_DEFAULT | wx.ICON_QUESTION),
+        )
         dialogFlag = confirmDiag.ShowModal()
-        if(dialogFlag == wx.ID_YES):
+        if dialogFlag == wx.ID_YES:
             all_config_keys = []
             more, value, index = self.cfg.GetFirstEntry()
-            while(more):
+            while more:
                 all_config_keys.append(value)
                 more, value, index = self.cfg.GetNextEntry(index)
-            all_config_keys.remove('notEmpty')
+            all_config_keys.remove("notEmpty")
             for key in all_config_keys:
                 self.cfg.DeleteEntry(key)
 
@@ -311,22 +326,28 @@ class MainWindow(wx.Frame):
         """
         btn = e.GetEventObject()
         is_pressed = btn.GetValue()
-        if(is_pressed):
-            btn.SetLabelText('Disconnect')
+        if is_pressed:
+            btn.SetLabelText("Disconnect")
             self.label_to_device = {}
             for label in self.labels:
-                if(self.cfg.ReadBool('connected' + label, False)):
-                    port = self.cfg.Read('port' + label)
-                    if(port == ''):
-                        wx.MessageBox(("The port for " + label
-                                      + "has not been properly selected"),
-                                      'Empty port', wx.OK | wx.ICON_WARNING)
+                if self.cfg.ReadBool("connected" + label, False):
+                    port = self.cfg.Read("port" + label)
+                    if port == "":
+                        wx.MessageBox(
+                            (
+                                "The port for "
+                                + label
+                                + "has not been properly selected"
+                            ),
+                            "Empty port",
+                            wx.OK | wx.ICON_WARNING,
+                        )
                         break
                     else:
                         device = openPort(port, label)
                         self.label_to_device[label] = device
         else:
-            btn.SetLabelText('Connect')
+            btn.SetLabelText("Connect")
             self.disconnect()
 
     def OnStart(self, e):
@@ -340,15 +361,15 @@ class MainWindow(wx.Frame):
         """
         btn = e.GetEventObject()
         is_pressed = btn.GetValue()
-        if(is_pressed):
-            btn.SetLabelText('Stop')
+        if is_pressed:
+            btn.SetLabelText("Stop")
             is_test_mode = self.btn_test.GetValue()
-            if(is_test_mode):
+            if is_test_mode:
                 self.rt = RepeatedTimer(1, self.simulateSensorReadings)
             else:
                 self.rt = RepeatedTimer(1, self.getAllReadings)
         else:
-            btn.SetLabelText('Start')
+            btn.SetLabelText("Start")
             self.rt.stop()
 
     def OnMeasure(self, e):
@@ -358,17 +379,17 @@ class MainWindow(wx.Frame):
         it will call simulateSensorReadings()
         """
         is_test_mode = self.btn_test.GetValue()
-        if(is_test_mode):
+        if is_test_mode:
             self.simulateSensorReadings()
         else:
             self.getAllReadings()
 
     def OnErase(self, e):
         """ Button action to delete last measurement from log text """
-        if(self.logText.GetValue() != ''):
+        if self.logText.GetValue() != "":
             lastPosition = self.logText.GetLastPosition()
             self.logText.Remove(self.lastRecord[-1], lastPosition)
-            if(len(self.lastRecord) > 1):
+            if len(self.lastRecord) > 1:
                 del self.lastRecord[-1]
 
     def sayHi(self):
@@ -382,12 +403,14 @@ class MainWindow(wx.Frame):
         It is used when in 'Test Mode'
         """
         self.lastRecord.append(self.logText.GetLastPosition())
-        self.logText.AppendText('*****'+str(self.numReadings)+'*****\n')
+        self.logText.AppendText("*****" + str(self.numReadings) + "*****\n")
         for label in self.labels:
-            if(self.cfg.ReadBool('connected' + label, False)):
-                if(label[0] == 'g'):
-                    reading = [-73.939830 + 0.001*self.numReadings,
-                               45.423804 + 0.001*self.numReadings]
+            if self.cfg.ReadBool("connected" + label, False):
+                if label[0] == "g":
+                    reading = [
+                        -73.939830 + 0.001 * self.numReadings,
+                        45.423804 + 0.001 * self.numReadings,
+                    ]
                 else:
                     reading = []
                     for i in range(len(variables[label[0]])):
@@ -405,9 +428,9 @@ class MainWindow(wx.Frame):
         Will fail if the Connect button is not activated
         """
         self.lastRecord.append(self.logText.GetLastPosition())
-        self.logText.AppendText('*****'+str(self.numReadings)+'*****\n')
+        self.logText.AppendText("*****" + str(self.numReadings) + "*****\n")
         for label in self.labels:
-            if(self.cfg.ReadBool('connected' + label, False)):
+            if self.cfg.ReadBool("connected" + label, False):
                 reading = getSensorReading(self.label_to_device[label], label)
                 self.updateUI(reading, label)
         self.numReadings += 1
@@ -417,7 +440,7 @@ class MainWindow(wx.Frame):
 
         This is a general method that calls the more specific ones if necessary
         """
-        if(label[0] == 'g'):
+        if label[0] == "g":
             values = self.processGPS(someValue, label)
             self.updateMap(values, label)
         else:
@@ -427,11 +450,11 @@ class MainWindow(wx.Frame):
 
     def updateLog(self, someValue, label):
         """ Update log text after receiving new sensor data """
-        if(someValue is not None):
-            ts = datetime.fromtimestamp(time.time()) \
-                         .strftime('%Y-%m-%d %H:%M:%S')
-            self.logText.AppendText((label + ';' + ts + ';'
-                                    + str(someValue)[1:-1] + '\n'))
+        if someValue is not None:
+            ts = datetime.fromtimestamp(time.time()).strftime("%Y-%m-%d %H:%M:%S")
+            self.logText.AppendText(
+                (label + ";" + ts + ";" + str(someValue)[1:-1] + "\n")
+            )
         else:
             pass
 
@@ -447,17 +470,17 @@ class MainWindow(wx.Frame):
         previous_measurements
         """
         sensor_type = label[0]
-        if(devices[sensor_type][1]):
+        if devices[sensor_type][1]:
             # color_number is to form the format 'C0' to cycle over colors
             # The value of 1 needs to be substracted because the 'C0' format
             # uses '0 to n-1' indexing, while the labels use '1 to n'
-            color_number = int(label[2])-1
-            if(label[1] == 'R'):
+            color_number = int(label[2]) - 1
+            if label[1] == "R":
                 # The order was made so that all right sensors would go after
                 # all the left ones
-                color_number += self.cfg.ReadInt('numSensors', 1)
+                color_number += self.cfg.ReadInt("numSensors", 1)
         else:
-            if(label[1] == 'L'):
+            if label[1] == "L":
                 color_number = 0
             else:
                 color_number = 1
@@ -465,21 +488,26 @@ class MainWindow(wx.Frame):
         for i, measured_property in enumerate(measured_properties):
             # The first set of measurements produce just dots, while the
             # subsequent ones produce lines connecting those dots
-            if(self.numReadings == 0):
-                self.axes[measured_property] \
-                    .plot(self.numReadings, someValue[i], marker='o',
-                          color='C' + str(color_number),
-                          markerfacecolor='C' + str(color_number))
+            if self.numReadings == 0:
+                self.axes[measured_property].plot(
+                    self.numReadings,
+                    someValue[i],
+                    marker="o",
+                    color="C" + str(color_number),
+                    markerfacecolor="C" + str(color_number),
+                )
             else:
-                self.axes[measured_property] \
-                    .plot([self.numReadings-1, self.numReadings],
-                          [self.previous_measurements[(label + '/'
-                                                       + measured_property)],
-                          someValue[i]], marker='o',
-                          color='C' + str(color_number),
-                          markerfacecolor='C' + str(color_number))
-            self.previous_measurements[(label + '/'
-                                        + measured_property)] = someValue[i]
+                self.axes[measured_property].plot(
+                    [self.numReadings - 1, self.numReadings],
+                    [
+                        self.previous_measurements[(label + "/" + measured_property)],
+                        someValue[i],
+                    ],
+                    marker="o",
+                    color="C" + str(color_number),
+                    markerfacecolor="C" + str(color_number),
+                )
+            self.previous_measurements[(label + "/" + measured_property)] = someValue[i]
 
     def updateMap(self, someValue, label):
         """ Update map after receiving new sensor data
@@ -493,48 +521,61 @@ class MainWindow(wx.Frame):
         at least two measurements are required to compute the heading, which
         in turn is required to know how to orient the sensor markers
         """
-        if(self.numReadings > 0):
+        if self.numReadings > 0:
             vehicle_x = someValue[2]
             vehicle_y = someValue[3]
-            heading_radians = math.pi*someValue[4]/180
-            self.mapAxes.plot(vehicle_x, vehicle_y, 'bs')
+            heading_radians = math.pi * someValue[4] / 180
+            self.mapAxes.plot(vehicle_x, vehicle_y, "bs")
             for label in self.labels:
-                if((label[0] != 'g') and self.cfg.ReadBool('connected'+label,
-                                                           False)):
-                    if(label[0] == 'u'):
-                        color = 'y'
-                        db = self.cfg.ReadFloat('DB1')/100
+                if (label[0] != "g") and self.cfg.ReadBool("connected" + label, False):
+                    if label[0] == "u":
+                        color = "y"
+                        db = self.cfg.ReadFloat("DB1") / 100
                     else:
-                        color = 'r'
-                        db = (self.cfg.ReadFloat('DB1')
-                              + self.cfg.ReadFloat('DB2'))/100
-                    if(label[0] == 'e'):
-                        color = 'g'
-                        index = self.cfg.ReadInt('IE' + label[1])
+                        color = "r"
+                        db = (
+                            self.cfg.ReadFloat("DB1") + self.cfg.ReadFloat("DB2")
+                        ) / 100
+                    if label[0] == "e":
+                        color = "g"
+                        index = self.cfg.ReadInt("IE" + label[1])
                         accumulator = 0
                         for i in range(index):
-                            accumulator += self.cfg.ReadFloat('D' + label[1]
-                                                              + str(i+1))
-                        if(label[1] == 'L'):
-                            ds = -1*accumulator/100
+                            accumulator += self.cfg.ReadFloat(
+                                "D" + label[1] + str(i + 1)
+                            )
+                        if label[1] == "L":
+                            ds = -1 * accumulator / 100
                         else:
-                            ds = accumulator/100
-                        ds += self.cfg.ReadFloat('DE' + label[1])/100
+                            ds = accumulator / 100
+                        ds += self.cfg.ReadFloat("DE" + label[1]) / 100
                     else:
                         accumulator = 0
                         for i in range(int(label[2])):
-                            accumulator += self.cfg.ReadFloat('D' + label[1]
-                                                              + str(i+1))
-                        if(label[1] == 'L'):
-                            ds = -1*accumulator/100
+                            accumulator += self.cfg.ReadFloat(
+                                "D" + label[1] + str(i + 1)
+                            )
+                        if label[1] == "L":
+                            ds = -1 * accumulator / 100
                         else:
-                            ds = accumulator/100
-                    sensor_x = (vehicle_x + ds*math.sin(heading_radians)
-                                - db*math.cos(heading_radians))
-                    sensor_y = (vehicle_y - ds*math.cos(heading_radians)
-                                - db*math.sin(heading_radians))
-                    self.mapAxes.plot(sensor_x, sensor_y, marker='P',
-                                      color=color, markerfacecolor=color)
+                            ds = accumulator / 100
+                    sensor_x = (
+                        vehicle_x
+                        + ds * math.sin(heading_radians)
+                        - db * math.cos(heading_radians)
+                    )
+                    sensor_y = (
+                        vehicle_y
+                        - ds * math.cos(heading_radians)
+                        - db * math.sin(heading_radians)
+                    )
+                    self.mapAxes.plot(
+                        sensor_x,
+                        sensor_y,
+                        marker="P",
+                        color=color,
+                        markerfacecolor=color,
+                    )
                 self.mapPanel.refresh()
 
     def processGPS(self, someValue, label):
@@ -550,73 +591,104 @@ class MainWindow(wx.Frame):
         The reported X and Y values are of the vehicle defined as the middle
         point of the toolbar that holds the sensors
         """
-        new_longitude = math.pi*someValue[0]/180
-        new_latitude = math.pi*someValue[1]/180
-        if(self.numReadings == 0):
+        new_longitude = math.pi * someValue[0] / 180
+        new_latitude = math.pi * someValue[1] / 180
+        if self.numReadings == 0:
             self.origin_time = time.time()
             self.origin_latitude = new_latitude
             self.origin_longitude = new_longitude
             a = 6378137  # Earth's semimajor axis
             b = 6356752.3142  # Earth's semiminor axis
             h = 20  # Current elevation over sea level
-            c = math.sqrt((a*math.cos(self.origin_latitude))**2
-                          + (b*math.sin(self.origin_latitude))**2)
-            self.F_lon = math.cos(self.origin_latitude)*((a**2/c) + h)
-            self.F_lat = (((a*b)**2/c**3) + h)
-            return [180*new_longitude/math.pi, 180*new_latitude/math.pi,
-                    0, 0, 0, 0, 0]
+            c = math.sqrt(
+                (a * math.cos(self.origin_latitude)) ** 2
+                + (b * math.sin(self.origin_latitude)) ** 2
+            )
+            self.F_lon = math.cos(self.origin_latitude) * ((a ** 2 / c) + h)
+            self.F_lat = ((a * b) ** 2 / c ** 3) + h
+            return [
+                180 * new_longitude / math.pi,
+                180 * new_latitude / math.pi,
+                0,
+                0,
+                0,
+                0,
+                0,
+            ]
         else:
-            new_time = time.time()-self.origin_time
-            gps_x = (new_longitude-self.origin_longitude)*self.F_lon
-            gps_y = (new_latitude-self.origin_latitude)*self.F_lat
-            old_time = self.previous_measurements[label+'/Time']
-            old_x = self.previous_measurements[label+'/X']
-            old_y = self.previous_measurements[label+'/Y']
-            heading_radians = math.atan2(gps_y-old_y, gps_x-old_x)
-            velocity = (math.sqrt((gps_x-old_x)**2+(gps_y-old_y)**2)
-                        / (new_time-old_time))
-            heading = 180*heading_radians/math.pi
-            if((label[1] == 'L') and self.cfg.HasEntry('DGLX')):
-                dgx = self.cfg.ReadFloat('DGLX')/100
-                dgy = self.cfg.ReadFloat('DGLY')/100
-                vehicle_x = (gps_x + dgx*math.sin(heading_radians)
-                             - dgy*math.cos(heading_radians))
-                vehicle_y = (gps_y - dgx*math.cos(heading_radians)
-                             - dgy*math.sin(heading_radians))
+            new_time = time.time() - self.origin_time
+            gps_x = (new_longitude - self.origin_longitude) * self.F_lon
+            gps_y = (new_latitude - self.origin_latitude) * self.F_lat
+            old_time = self.previous_measurements[label + "/Time"]
+            old_x = self.previous_measurements[label + "/X"]
+            old_y = self.previous_measurements[label + "/Y"]
+            heading_radians = math.atan2(gps_y - old_y, gps_x - old_x)
+            velocity = math.sqrt((gps_x - old_x) ** 2 + (gps_y - old_y) ** 2) / (
+                new_time - old_time
+            )
+            heading = 180 * heading_radians / math.pi
+            if (label[1] == "L") and self.cfg.HasEntry("DGLX"):
+                dgx = self.cfg.ReadFloat("DGLX") / 100
+                dgy = self.cfg.ReadFloat("DGLY") / 100
+                vehicle_x = (
+                    gps_x
+                    + dgx * math.sin(heading_radians)
+                    - dgy * math.cos(heading_radians)
+                )
+                vehicle_y = (
+                    gps_y
+                    - dgx * math.cos(heading_radians)
+                    - dgy * math.sin(heading_radians)
+                )
             else:
-                if((label[1] == 'R') and self.cfg.HasEntry('DGRX')):
-                    dgx = self.cfg.ReadFloat('DGRX')/100
-                    dgy = self.cfg.ReadFloat('DGRY')/100
-                    vehicle_x = (gps_x - dgx*math.sin(heading_radians)
-                                 - dgy*math.cos(heading_radians))
-                    vehicle_y = (gps_y + dgx*math.cos(heading_radians)
-                                 - dgy*math.sin(heading_radians))
+                if (label[1] == "R") and self.cfg.HasEntry("DGRX"):
+                    dgx = self.cfg.ReadFloat("DGRX") / 100
+                    dgy = self.cfg.ReadFloat("DGRY") / 100
+                    vehicle_x = (
+                        gps_x
+                        - dgx * math.sin(heading_radians)
+                        - dgy * math.cos(heading_radians)
+                    )
+                    vehicle_y = (
+                        gps_y
+                        + dgx * math.cos(heading_radians)
+                        - dgy * math.sin(heading_radians)
+                    )
                 else:
-                    wx.MessageBox(("The dimensions in Layout have not been "
-                                   + "properly set"),
-                                  'Empty port', wx.OK | wx.ICON_WARNING)
+                    wx.MessageBox(
+                        ("The dimensions in Layout have not been " + "properly set"),
+                        "Empty port",
+                        wx.OK | wx.ICON_WARNING,
+                    )
                     return 0
-            return [180*new_longitude/math.pi, 180*new_latitude/math.pi,
-                    vehicle_x, vehicle_y, heading, velocity, new_time]
+            return [
+                180 * new_longitude / math.pi,
+                180 * new_latitude / math.pi,
+                vehicle_x,
+                vehicle_y,
+                heading,
+                velocity,
+                new_time,
+            ]
 
     def logSettings(self):
         """ Append settings to log """
-        self.logText.AppendText('**************Settings-Start**************\n')
+        self.logText.AppendText("**************Settings-Start**************\n")
         more, value, index = self.cfg.GetFirstEntry()
-        while(more):
+        while more:
             initial = value[0]
-            if(value != 'notEmpty'):
-                if((initial == 'I') or (initial == 'n')):
+            if value != "notEmpty":
+                if (initial == "I") or (initial == "n"):
                     property = str(self.cfg.ReadInt(value))
-                if(initial == 'D'):
+                if initial == "D":
                     property = str(self.cfg.ReadFloat(value))
-                if(initial == 'c'):
+                if initial == "c":
                     property = str(self.cfg.ReadBool(value))
-                if(initial == 'p'):
+                if initial == "p":
                     property = self.cfg.Read(value)
-                self.logText.AppendText('{' + value + ': ' + property + '}\n')
+                self.logText.AppendText("{" + value + ": " + property + "}\n")
             more, value, index = self.cfg.GetNextEntry(index)
-        self.logText.AppendText('**************Settings-End****************\n')
+        self.logText.AppendText("**************Settings-End****************\n")
 
     def getLabels(self):
         """ Produces list of sensor labels
@@ -625,21 +697,21 @@ class MainWindow(wx.Frame):
         have the attribute labels to keep them available. This method is used
         to update the value of labels whenever the number of sensors changes
         """
-        num_sensors = self.cfg.ReadInt('numSensors', 1)
+        num_sensors = self.cfg.ReadInt("numSensors", 1)
         labels = []
         device_tuples = list(devices.values())
         for device_tuple in device_tuples:
             name = device_tuple[0]
             scaling = device_tuple[1]
             initial = name[0].lower()
-            if(scaling):
+            if scaling:
                 for i in range(num_sensors):
-                    labels.append(initial+'L'+str(i+1))
+                    labels.append(initial + "L" + str(i + 1))
                 for i in range(num_sensors):
-                    labels.append(initial+'R'+str(i+1))
+                    labels.append(initial + "R" + str(i + 1))
             else:
-                labels.append(initial+'L')
-                labels.append(initial+'R')
+                labels.append(initial + "L")
+                labels.append(initial + "R")
         return labels
 
     def disconnect(self):

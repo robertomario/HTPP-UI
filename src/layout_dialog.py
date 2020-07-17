@@ -49,24 +49,27 @@ class LayoutDialog(wx.Dialog):
         self.initUI()
         self.SetSize((650, 500))
         self.Centre()
-        self.SetTitle('Layout')
+        self.SetTitle("Layout")
 
     def initUI(self):
         """ Define dialog elements """
-        num_sensors = self.settings.ReadInt('numSensors', 1)
+        num_sensors = self.settings.ReadInt("numSensors", 1)
 
         vbox0 = wx.BoxSizer(wx.VERTICAL)
         pnl = ScrolledPanel(self)
         vbox1 = wx.BoxSizer(wx.VERTICAL)
 
-        st = wx.StaticText(pnl, label="If the sensor numbers don't match, "
-                                      + "make first the adjustments in "
-                                      + "Settings>Ports", size=(600, 60))
+        st = wx.StaticText(
+            pnl,
+            label="If the sensor numbers don't match, "
+            + "make first the adjustments in "
+            + "Settings>Ports",
+            size=(600, 60),
+        )
         st.SetFont(wx.Font(18, wx.DEFAULT, wx.NORMAL, wx.NORMAL))
         vbox1.Add(st, proportion=0, flag=wx.ALL)
 
-        image = wx.Image('docs/diagram.png', wx.BITMAP_TYPE_ANY) \
-                  .Rescale(450, 300)
+        image = wx.Image("docs/diagram.png", wx.BITMAP_TYPE_ANY).Rescale(450, 300)
         imageBitmap = wx.StaticBitmap(pnl, bitmap=wx.Bitmap(image))
         vbox1.Add(imageBitmap, proportion=1, flag=wx.ALL | wx.CENTER)
 
@@ -78,19 +81,19 @@ class LayoutDialog(wx.Dialog):
         self.addLabelledCtrl(pnl, vbox1, "DB1")
         self.addLabelledCtrl(pnl, vbox1, "DB2")
         for i in range(num_sensors):
-            self.addLabelledCtrl(pnl, vbox1, "DL"+str(i+1))
+            self.addLabelledCtrl(pnl, vbox1, "DL" + str(i + 1))
         for i in range(num_sensors):
-            self.addLabelledCtrl(pnl, vbox1, "DR"+str(i+1))
-        if(self.settings.ReadBool('connectedgL', False)):
+            self.addLabelledCtrl(pnl, vbox1, "DR" + str(i + 1))
+        if self.settings.ReadBool("connectedgL", False):
             self.addLabelledCtrl(pnl, vbox1, "DGLX")
             self.addLabelledCtrl(pnl, vbox1, "DGLY")
-        if(self.settings.ReadBool('connectedgR', False)):
+        if self.settings.ReadBool("connectedgR", False):
             self.addLabelledCtrl(pnl, vbox1, "DGRX")
             self.addLabelledCtrl(pnl, vbox1, "DGRY")
-        if(self.settings.ReadBool('connectedeL', False)):
+        if self.settings.ReadBool("connectedeL", False):
             self.addLabelledCtrl(pnl, vbox1, "IEL")
             self.addLabelledCtrl(pnl, vbox1, "DEL")
-        if(self.settings.ReadBool('connectedeR', False)):
+        if self.settings.ReadBool("connectedeR", False):
             self.addLabelledCtrl(pnl, vbox1, "IER")
             self.addLabelledCtrl(pnl, vbox1, "DER")
 
@@ -98,16 +101,15 @@ class LayoutDialog(wx.Dialog):
         pnl.SetupScrolling()
 
         hbox = wx.BoxSizer(wx.HORIZONTAL)
-        okButton = wx.Button(self, label='OK')
-        cancelButton = wx.Button(self, label='Cancel')
+        okButton = wx.Button(self, label="OK")
+        cancelButton = wx.Button(self, label="Cancel")
         hbox.Add(okButton)
         hbox.Add(cancelButton, flag=wx.LEFT, border=5)
         okButton.Bind(wx.EVT_BUTTON, self.OnOK)
         cancelButton.Bind(wx.EVT_BUTTON, self.OnCancel)
 
         vbox0.Add(pnl, proportion=1, flag=wx.ALL | wx.EXPAND, border=5)
-        vbox0.Add(hbox, proportion=0, flag=wx.ALIGN_CENTER | wx.ALL,
-                  border=10)
+        vbox0.Add(hbox, proportion=0, flag=wx.ALIGN_CENTER | wx.ALL, border=10)
         self.SetSizer(vbox0)
 
     def OnOK(self, e):
@@ -115,10 +117,10 @@ class LayoutDialog(wx.Dialog):
         other_settings = list(self.setting_to_control.keys())
         for setting in other_settings:
             ctrl = self.setting_to_control[setting]
-            if(setting[0] == 'D'):
+            if setting[0] == "D":
                 self.settings.WriteFloat(setting, ctrl.GetValue())
             else:
-                if(setting[0] == 'I'):
+                if setting[0] == "I":
                     self.settings.WriteInt(setting, ctrl.GetValue())
         self.EndModal(wx.ID_OK)
 
@@ -153,16 +155,18 @@ class LayoutDialog(wx.Dialog):
         """
         st = wx.StaticText(panel, label=label)
         boxSizer.Add(st, proportion=0, flag=wx.CENTER | wx.TOP, border=10)
-        if(label[0] == 'D'):
-            spinCtrl = wx.SpinCtrlDouble(panel, min=-3000, max=3000,
-                                         initial=self.settings
-                                                     .ReadFloat(label))
+        if label[0] == "D":
+            spinCtrl = wx.SpinCtrlDouble(
+                panel, min=-3000, max=3000, initial=self.settings.ReadFloat(label)
+            )
             spinCtrl.SetDigits(2)
         else:
-            if(label[0] == 'I'):
-                spinCtrl = wx.SpinCtrl(panel, min=1,
-                                       max=self.settings
-                                               .ReadInt('numSensors', 1),
-                                       initial=self.settings.ReadInt(label))
+            if label[0] == "I":
+                spinCtrl = wx.SpinCtrl(
+                    panel,
+                    min=1,
+                    max=self.settings.ReadInt("numSensors", 1),
+                    initial=self.settings.ReadInt(label),
+                )
         boxSizer.Add(spinCtrl, proportion=0, flag=wx.ALL | wx.CENTER)
         self.setting_to_control[st.GetLabelText()] = spinCtrl
