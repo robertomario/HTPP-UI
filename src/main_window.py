@@ -218,6 +218,8 @@ class MainWindow(wx.Frame):
             self.logText.SetValue("")
             self.logSettings()
             self.plotter.clear()
+            self.plotter.redoLegend()
+            self.plotter.refresh()
             self.mapPanel.clear()
             self.mapPanel.refresh()
             self.clearVariables()
@@ -237,6 +239,8 @@ class MainWindow(wx.Frame):
         self.logText.SetValue("")
         self.logSettings()
         self.plotter.clear()
+        self.plotter.redoLegend()
+        self.plotter.refresh()
         self.mapPanel.clear()
         self.mapPanel.refresh()
         self.clearVariables()
@@ -433,6 +437,7 @@ class MainWindow(wx.Frame):
             if self.cfg.ReadBool("connected" + label, False):
                 reading = getSensorReading(self.label_to_device[label], label)
                 self.updateUI(reading, label)
+        self.plotter.refresh()
         self.numReadings += 1
 
     def updateUI(self, someValue, label):

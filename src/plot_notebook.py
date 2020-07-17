@@ -134,7 +134,6 @@ class PlotNotebook(wx.Panel):
         for i in range(self.nb.GetPageCount()):
             page = self.nb.GetPage(i)
             page.clear()
-            page.refresh()
 
     def redoLegend(self, variables, devices, num_sensors):
         """ Redo legends for all plots
