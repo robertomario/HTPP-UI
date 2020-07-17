@@ -2,6 +2,7 @@
 
 # Author: Roberto Buelvas
 
+import numpy as np
 import pynmea2
 import serial
 
@@ -51,7 +52,7 @@ def getSensorReading(device_port, label, is_device_ready=True):
             return getOpenEnvironmentalReading(device_port)
 
 
-def getMultispectralReading(device, numValues=10, is_new_model=True):
+def getMultispectralReading(device, numValues=3, is_new_model=True):
     """ Get reading from multispectral sensor
 
     The multispectral sensors are ACS-430 or ACS-435 from Holland Scientific
@@ -64,73 +65,60 @@ def getMultispectralReading(device, numValues=10, is_new_model=True):
     The code currently cannot handle the older model because of the way the
     variables dictionary is defined
     Units:
-        proxyDistance: cm
-        default: dimentionless
+        CI: dimentionless
+        NDRE: dimentionless
+        NDVI: dimentionless
+        *proxyDistance: cm
+        *proxy LAI: dimentionless
+        *proxy CCC: dimentionless
+        Red-Edge: dimentionless
+        NIR: dimentionless
+        Red: dimentionless
+    *Only available in new model
     """
     if is_new_model:
-        ci = []
-        ndre = []
-        ndvi = []
-        proxyDistance = []
-        proxyLAI = []
-        proxyCCC = []
-        redEdge = []
-        nir = []
-        red = []
+        values = np.empty((numValues, 9))
+        values.fill(np.nan)
         for i in range(numValues):
-            message = device.readline().strip().decode()
-            measurements = message.split(",")
-            measurements = [float(i) for i in measurements]
-            ci.append((measurements[6] / measurements[5]) - 1)
-            ndre.append(measurements[0])
-            ndvi.append(measurements[1])
-            proxyDistance.append(measurements[2])
-            proxyLAI.append(measurements[3])
-            proxyCCC.append(measurements[4])
-            redEdge.append(measurements[5])
-            nir.append(measurements[6])
-            red.append(measurements[7])
-        finalMeasurement = [
-            sum(ci),
-            sum(ndre),
-            sum(ndvi),
-            sum(proxyDistance),
-            sum(proxyLAI),
-            sum(proxyCCC),
-            sum(redEdge),
-            sum(nir),
-            sum(red),
-        ]
+            try:
+                message = device.readline().strip().decode()
+            except Exception as e:
+                pass
+            else:
+                measurements = message.split(",")
+                for j, measure in enumerate(measurements):
+                    try:
+                        aux = float(measure)
+                    except Exception as e:
+                        pass
+                    else:
+                        values[i, j + 1] = aux
+        values[:, 0] = (values[:, 7] / values[:, 6]) - 1
     else:
-        ci = []
-        ndre = []
-        ndvi = []
-        redEdge = []
-        nir = []
-        red = []
+        values = np.empty((numValues, 6))
+        values.fill(np.nan)
         for i in range(numValues):
-            message = device.readline().strip().decode()
-            measurements = message.split(",")
-            measurements = [float(i) for i in measurements]
-            ci.append((measurements[3] / measurements[2]) - 1)
-            ndre.append(measurements[0])
-            ndvi.append(measurements[1])
-            redEdge.append(measurements[2])
-            nir.append(measurements[3])
-            red.append(measurements[4])
-        finalMeasurement = [
-            sum(ci),
-            sum(ndre),
-            sum(ndvi),
-            sum(redEdge),
-            sum(nir),
-            sum(red),
-        ]
-    finalMeasurement = [measure / numValues for measure in finalMeasurement]
+            try:
+                message = device.readline().strip().decode()
+            except Exception as e:
+                pass
+            else:
+                measurements = message.split(",")
+                for j, measure in enumerate(measurements):
+                    try:
+                        aux = float(measure)
+                    except Exception as e:
+                        pass
+                    else:
+                        # Index is j+1 because the first column is reserved for
+                        # CI, which is manually computed
+                        values[i, j + 1] = aux
+        values[:, 0] = (values[:, 4] / values[:, 3]) - 1
+    finalMeasurement = np.nanmean(values, axis=0)
     return finalMeasurement
 
 
-def getUltrasonicReading(device, numValues=10):
+def getUltrasonicReading(device, numValues=3):
     """ Get reading from ultrasonic sensor
 
     The ultrasonic sensor is ToughSonic14 from Senix
@@ -141,29 +129,33 @@ def getUltrasonicReading(device, numValues=10):
     Units:
         mm
     """
-    count = -1
-    finalMeasurement = 0
-    index = 0
-    message = b""
-    charList = [b"0", b"0", b"0", b"0", b"0"]
-    while count < numValues:
-        newChar = device.read()
-        if newChar == b"\r":
-            count += 1
-            message = b"".join(charList)
-            measurement = 0.003384 * 25.4 * int(message)
-            finalMeasurement += measurement
-            message = b""
-            index = 0
-        else:
-            charList[index] = newChar
-            index += 1
-            if index > 5:
+    try:
+        count = 0
+        finalMeasurement = 0
+        index = 0
+        message = b""
+        charList = [b"0", b"0", b"0", b"0", b"0"]
+        while count < numValues:
+            newChar = device.read()
+            if newChar == b"\r":
+                count += 1
+                message = b"".join(charList)
+                measurement = 0.003384 * 25.4 * int(message)
+                finalMeasurement += measurement
+                message = b""
                 index = 0
-    return [finalMeasurement / numValues]
+            else:
+                charList[index] = newChar
+                index += 1
+                if index >= 5:
+                    index = 0
+    except Exception as e:
+        return np.array([np.nan])
+    else:
+        return np.array([finalMeasurement / numValues])
 
 
-def getGPSReading(device, numValues=3):
+def getGPSReading(device, numValues=2):
     """ Get reading from GPS sensor
 
     The GPS receiver is 19x HVS from Garmin
@@ -173,17 +165,33 @@ def getGPSReading(device, numValues=3):
     Units:
         longitude, latitude: °
     """
-    i = 0
-    while i < numValues:
-        message = device.readline().strip().decode()
-        if message[0:6] == "$GPGGA" or message[0:6] == "$GPGLL":
-            i += 1
-            parsedMessage = pynmea2.parse(message)
-            finalMeasurement = [parsedMessage.longitude, parsedMessage.latitude]
+    count = 0
+    values = np.empty((numValues, 2))
+    values.fill(np.nan)
+    while count < numValues:
+        try:
+            message = device.readline().strip().decode()
+            if message[0:6] == "$GPGGA":
+                count += 1
+        except Exception as e:
+            pass
+        else:
+            try:
+                parsedMessage = pynmea2.parse(message)
+            except Exception as e:
+                pass
+            else:
+                # Both longitude and latitude being 0 simultaneously is way
+                # more likely to be a blank measurement than actually that
+                # point
+                if (parsedMessage.longitude != 0) or (parsedMessage.latitude != 0):
+                    values[count, 0] = parsedMessage.longitude
+                    values[count, 1] = parsedMessage.latitude
+    finalMeasurement = np.nanmean(values, axis=0)
     return finalMeasurement
 
 
-def getEnvironmentalReading(device, numValues=10):
+def getEnvironmentalReading(device, numValues=3):
     """ Get reading from environmental sensor
 
     The environmental sensor is DAS43X from Holland Scientific
@@ -195,31 +203,26 @@ def getEnvironmentalReading(device, numValues=10):
         Reflected PAR: μmol quanta m**−2 s**−1
         Atmospheric pressure: kPa
     """
-    canopyT = []
-    humidity = []
-    airT = []
-    incidentPAR = []
-    reflectedPAR = []
-    AtmP = []
+    values = np.empty((numValues, 6))
     for i in range(numValues):
-        message = device.readline().strip().decode()
-        measurements = message.split(",")
-        measurements = [float(i) for i in measurements]
-        canopyT.append(measurements[0])
-        humidity.append(measurements[1])
-        airT.append(measurements[2])
-        incidentPAR.append(measurements[3])
-        reflectedPAR.append(measurements[4])
-        AtmP.append(measurements[5])
-    finalMeasurement = [
-        sum(canopyT),
-        sum(humidity),
-        sum(airT),
-        sum(incidentPAR),
-        sum(reflectedPAR),
-        sum(AtmP),
-    ]
-    finalMeasurement = [measure / numValues for measure in finalMeasurement]
+        try:
+            message = device.readline().strip().decode()
+        except Exception as e:
+            print("Error in ")
+            print(str(e))
+        else:
+            measurements = message.split(",")
+            for j, measure in enumerate(measurements):
+                # Only care about the first 6 measurements, as the rest are
+                # generic analog channels
+                if j < 6:
+                    try:
+                        aux = float(measure)
+                    except Exception as e:
+                        pass
+                    else:
+                        values[i, j] = aux
+    finalMeasurement = np.nanmean(values, axis=0)
     return finalMeasurement
 
 
