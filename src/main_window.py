@@ -8,6 +8,7 @@ import time
 import math
 import os
 
+import numpy as np
 import wx
 
 from .plot_notebook import Plot, PlotNotebook
@@ -327,6 +328,7 @@ class MainWindow(wx.Frame):
 
         Besides opening the ports to the serial devices, this method also
         populates the attribute label_to_device for later use
+        It also does a first GPS reading to set the constants of processing
         """
         btn = e.GetEventObject()
         is_pressed = btn.GetValue()
@@ -350,6 +352,24 @@ class MainWindow(wx.Frame):
                     else:
                         device = openPort(port, label)
                         self.label_to_device[label] = device
+                        if label[0] == "g":
+                            reading = np.array([np.nan, np.nan])
+                            while any(np.isnan(reading)):
+                                reading = getSensorReading(device, label)
+                            self.origin_time = time.time()
+                            self.origin_latitude = math.pi * reading[1] / 180
+                            self.origin_longitude = math.pi * reading[0] / 180
+                            a = 6378137  # Earth's semimajor axis
+                            b = 6356752.3142  # Earth's semiminor axis
+                            h = 20  # Current elevation over sea level
+                            c = math.sqrt(
+                                (a * math.cos(self.origin_latitude)) ** 2
+                                + (b * math.sin(self.origin_latitude)) ** 2
+                            )
+                            self.F_lon = math.cos(self.origin_latitude) * (
+                                (a ** 2 / c) + h
+                            )
+                            self.F_lat = ((a * b) ** 2 / c ** 3) + h
         else:
             btn.SetLabelText("Connect")
             self.disconnect()
@@ -457,11 +477,12 @@ class MainWindow(wx.Frame):
         """ Update log text after receiving new sensor data """
         if someValue is not None:
             ts = datetime.fromtimestamp(time.time()).strftime("%Y-%m-%d %H:%M:%S")
+            value_text = []
+            for value in someValue:
+                value_text.append(str(np.round(value, 4)))
             self.logText.AppendText(
-                (label + ";" + ts + ";" + str(someValue)[1:-1] + "\n")
+                (label + ";" + ts + ";" + ",".join(value_text) + "\n")
             )
-        else:
-            pass
 
     def updatePlot(self, someValue, label):
         """ Updates plots after receiving new sensor data
@@ -494,25 +515,66 @@ class MainWindow(wx.Frame):
             # The first set of measurements produce just dots, while the
             # subsequent ones produce lines connecting those dots
             if self.numReadings == 0:
-                self.axes[measured_property].plot(
-                    self.numReadings,
-                    someValue[i],
-                    marker="o",
-                    color="C" + str(color_number),
-                    markerfacecolor="C" + str(color_number),
-                )
-            else:
-                self.axes[measured_property].plot(
-                    [self.numReadings - 1, self.numReadings],
-                    [
-                        self.previous_measurements[(label + "/" + measured_property)],
+                if np.isnan(someValue[i]):
+                    self.axes[measured_property].plot(
+                        0,
+                        -1,
+                        marker=",",
+                        color="C" + str(color_number),
+                        markerfacecolor="C" + str(color_number),
+                    )
+                else:
+                    self.axes[measured_property].plot(
+                        0,
                         someValue[i],
-                    ],
-                    marker="o",
-                    color="C" + str(color_number),
-                    markerfacecolor="C" + str(color_number),
-                )
-            self.previous_measurements[(label + "/" + measured_property)] = someValue[i]
+                        marker="o",
+                        color="C" + str(color_number),
+                        markerfacecolor="C" + str(color_number),
+                    )
+            else:
+                previous = self.previous_measurements[label + "/" + measured_property]
+                if np.isnan(someValue[i]):
+                    if np.isnan(previous):
+                        self.axes[measured_property].plot(
+                            [self.numReadings - 1, self.numReadings],
+                            [-1, -1],
+                            marker=",",
+                            color="C" + str(color_number),
+                            markerfacecolor="C" + str(color_number),
+                        )
+                    else:
+                        self.axes[measured_property].plot(
+                            [self.numReadings - 1, self.numReadings],
+                            [previous, -1],
+                            marker=",",
+                            color="C" + str(color_number),
+                            markerfacecolor="C" + str(color_number),
+                        )
+                else:
+                    if np.isnan(previous):
+                        self.axes[measured_property].plot(
+                            [self.numReadings - 1, self.numReadings],
+                            [-1, someValue[i]],
+                            marker=",",
+                            color="C" + str(color_number),
+                            markerfacecolor="C" + str(color_number),
+                        )
+                        self.axes[measured_property].plot(
+                            self.numReadings,
+                            someValue[i],
+                            marker="o",
+                            color="C" + str(color_number),
+                            markerfacecolor="C" + str(color_number),
+                        )
+                    else:
+                        self.axes[measured_property].plot(
+                            [self.numReadings - 1, self.numReadings],
+                            [previous, someValue[i]],
+                            marker="o",
+                            color="C" + str(color_number),
+                            markerfacecolor="C" + str(color_number),
+                        )
+            self.previous_measurements[label + "/" + measured_property] = someValue[i]
 
     def updateMap(self, someValue, label):
         """ Update map after receiving new sensor data
@@ -526,7 +588,7 @@ class MainWindow(wx.Frame):
         at least two measurements are required to compute the heading, which
         in turn is required to know how to orient the sensor markers
         """
-        if self.numReadings > 0:
+        if (self.numReadings > 0) and not any(np.isnan(someValue[2:5])):
             vehicle_x = someValue[2]
             vehicle_y = someValue[3]
             heading_radians = math.pi * someValue[4] / 180
@@ -581,7 +643,7 @@ class MainWindow(wx.Frame):
                         color=color,
                         markerfacecolor=color,
                     )
-                self.mapPanel.refresh()
+            self.mapPanel.refresh()
 
     def processGPS(self, someValue, label):
         """ Estimates heading and velocity from GPS readings
@@ -598,83 +660,61 @@ class MainWindow(wx.Frame):
         """
         new_longitude = math.pi * someValue[0] / 180
         new_latitude = math.pi * someValue[1] / 180
-        if self.numReadings == 0:
-            self.origin_time = time.time()
-            self.origin_latitude = new_latitude
-            self.origin_longitude = new_longitude
-            a = 6378137  # Earth's semimajor axis
-            b = 6356752.3142  # Earth's semiminor axis
-            h = 20  # Current elevation over sea level
-            c = math.sqrt(
-                (a * math.cos(self.origin_latitude)) ** 2
-                + (b * math.sin(self.origin_latitude)) ** 2
+        new_time = time.time() - self.origin_time
+        gps_x = (new_longitude - self.origin_longitude) * self.F_lon
+        gps_y = (new_latitude - self.origin_latitude) * self.F_lat
+        old_time = self.previous_measurements[label + "/Time"]
+        old_x = self.previous_measurements[label + "/X"]
+        old_y = self.previous_measurements[label + "/Y"]
+        heading_radians = math.atan2(gps_y - old_y, gps_x - old_x)
+        velocity = math.sqrt((gps_x - old_x) ** 2 + (gps_y - old_y) ** 2) / (
+            new_time - old_time
+        )
+        heading = 180 * heading_radians / math.pi
+        if (label[1] == "L") and self.cfg.HasEntry("DGLX"):
+            dgx = self.cfg.ReadFloat("DGLX") / 100
+            dgy = self.cfg.ReadFloat("DGLY") / 100
+            vehicle_x = (
+                gps_x
+                + dgx * math.sin(heading_radians)
+                - dgy * math.cos(heading_radians)
             )
-            self.F_lon = math.cos(self.origin_latitude) * ((a ** 2 / c) + h)
-            self.F_lat = ((a * b) ** 2 / c ** 3) + h
-            return [
-                180 * new_longitude / math.pi,
-                180 * new_latitude / math.pi,
-                0,
-                0,
-                0,
-                0,
-                0,
-            ]
+            vehicle_y = (
+                gps_y
+                - dgx * math.cos(heading_radians)
+                - dgy * math.sin(heading_radians)
+            )
+        elif (label[1] == "R") and self.cfg.HasEntry("DGRX"):
+            dgx = self.cfg.ReadFloat("DGRX") / 100
+            dgy = self.cfg.ReadFloat("DGRY") / 100
+            vehicle_x = (
+                gps_x
+                - dgx * math.sin(heading_radians)
+                - dgy * math.cos(heading_radians)
+            )
+            vehicle_y = (
+                gps_y
+                + dgx * math.cos(heading_radians)
+                - dgy * math.sin(heading_radians)
+            )
         else:
-            new_time = time.time() - self.origin_time
-            gps_x = (new_longitude - self.origin_longitude) * self.F_lon
-            gps_y = (new_latitude - self.origin_latitude) * self.F_lat
-            old_time = self.previous_measurements[label + "/Time"]
-            old_x = self.previous_measurements[label + "/X"]
-            old_y = self.previous_measurements[label + "/Y"]
-            heading_radians = math.atan2(gps_y - old_y, gps_x - old_x)
-            velocity = math.sqrt((gps_x - old_x) ** 2 + (gps_y - old_y) ** 2) / (
-                new_time - old_time
+            wx.MessageBox(
+                ("The dimensions in Layout have not been " + "properly set"),
+                "Empty port",
+                wx.OK | wx.ICON_WARNING,
             )
-            heading = 180 * heading_radians / math.pi
-            if (label[1] == "L") and self.cfg.HasEntry("DGLX"):
-                dgx = self.cfg.ReadFloat("DGLX") / 100
-                dgy = self.cfg.ReadFloat("DGLY") / 100
-                vehicle_x = (
-                    gps_x
-                    + dgx * math.sin(heading_radians)
-                    - dgy * math.cos(heading_radians)
-                )
-                vehicle_y = (
-                    gps_y
-                    - dgx * math.cos(heading_radians)
-                    - dgy * math.sin(heading_radians)
-                )
-            else:
-                if (label[1] == "R") and self.cfg.HasEntry("DGRX"):
-                    dgx = self.cfg.ReadFloat("DGRX") / 100
-                    dgy = self.cfg.ReadFloat("DGRY") / 100
-                    vehicle_x = (
-                        gps_x
-                        - dgx * math.sin(heading_radians)
-                        - dgy * math.cos(heading_radians)
-                    )
-                    vehicle_y = (
-                        gps_y
-                        + dgx * math.cos(heading_radians)
-                        - dgy * math.sin(heading_radians)
-                    )
-                else:
-                    wx.MessageBox(
-                        ("The dimensions in Layout have not been " + "properly set"),
-                        "Empty port",
-                        wx.OK | wx.ICON_WARNING,
-                    )
-                    return 0
-            return [
-                180 * new_longitude / math.pi,
-                180 * new_latitude / math.pi,
+            return 0
+        return np.array(
+            [
+                someValue[0],
+                someValue[1],
                 vehicle_x,
                 vehicle_y,
                 heading,
                 velocity,
                 new_time,
             ]
+        )
 
     def logSettings(self):
         """ Append settings to log """
