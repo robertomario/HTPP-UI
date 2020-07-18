@@ -9,3 +9,4 @@ personal/
 __pycache__/
 .venv/
 data/HTPPLogFile*
+data/*.mp4
