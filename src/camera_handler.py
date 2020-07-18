@@ -5,68 +5,101 @@ import numpy as np
 import cv2
 
 
-def connectCamera(label, camera_index, width=640, height=480, fps=30):
-    name = "data/HTPP" + datetime.now().strftime("%Y-%m-%d") + label[1] + ".mp4"
-    cap = cv2.VideoCapture(camera_index, cv2.CAP_DSHOW)
-    cap.set(cv2.CAP_PROP_FRAME_WIDTH, width)
-    cap.set(cv2.CAP_PROP_FRAME_HEIGHT, height)
-    cap.set(cv2.CAP_PROP_FPS, fps)
+class CameraHandler:
+    def __init__(self, label, width=640, height=480, fps=30):
+        self.label = label
+        self.width = width
+        self.height = height
+        self.fps = fps
+        self.resetCamera()
 
-    fourcc = cv2.VideoWriter_fourcc(*"mp4v")
-    out = cv2.VideoWriter(name, fourcc, fps, (width, height))
-    return cap, out
+    def connectCamera(self, camera_index):
+        name = (
+            "data/HTPP" + datetime.now().strftime("%Y-%m-%d") + self.label[1] + ".mp4"
+        )
+        self.cap = cv2.VideoCapture(camera_index, cv2.CAP_DSHOW)
+        self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, self.width)
+        self.cap.set(cv2.CAP_PROP_FRAME_HEIGHT, self.height)
+        self.cap.set(cv2.CAP_PROP_FPS, self.fps)
+        fourcc = cv2.VideoWriter_fourcc(*"mp4v")
+        self.out = cv2.VideoWriter(name, fourcc, self.fps, (self.width, self.height))
 
+    def startCameraRecording(self):
+        self.is_recording = True
+        if self.camera_thread is None:
+            self.camera_thread = threading.Thread(target=self.useCamera, daemon=True)
+            self.camera_thread.start()
 
-def startCameraRecording(video_capture, video_writer, label):
-    camera_thread = threading.Thread(
-        target=useCamera, args=(video_capture, video_writer, label), daemon=True
-    )
-    camera_thread.start()
-    return camera_thread
-
-
-def useCamera(video_capture, video_writer, label):
-    while video_capture.isOpened():
-        ret, frame = video_capture.read()
-        if ret:
-            frame = cv2.flip(frame, 1).copy()
-            timestamp = datetime.now().strftime("%H:%M:%S")
-            cv2.putText(
-                frame,
-                timestamp,
-                (0, 30),
-                cv2.FONT_HERSHEY_SIMPLEX,
-                1,
-                (255, 255, 255),
-                3,
-                cv2.LINE_AA,
-                False,
-            )
-            video_writer.write(frame)
-            cv2.imshow(label, frame)
-            if cv2.waitKey(1) == ord("q"):
+    def useCamera(self):
+        while self.cap.isOpened():
+            ret, frame = self.cap.read()
+            if ret:
+                frame = cv2.flip(frame, 1).copy()
+                timestamp = datetime.now().strftime("%H:%M:%S")
+                timed_frame = frame.copy()
+                if self.is_recording:
+                    cv2.putText(
+                        timed_frame,
+                        timestamp,
+                        (0, 30),
+                        cv2.FONT_HERSHEY_SIMPLEX,
+                        1,
+                        (255, 255, 255),
+                        3,
+                        cv2.LINE_AA,
+                        False,
+                    )
+                    self.out.write(timed_frame)
+                    cv2.putText(
+                        frame,
+                        "Recording",
+                        (450, 30),
+                        cv2.FONT_HERSHEY_SIMPLEX,
+                        1,
+                        (255, 255, 255),
+                        3,
+                        cv2.LINE_AA,
+                        False,
+                    )
+                cv2.imshow(self.label, frame)
+                if cv2.waitKey(1) == ord("q"):
+                    break
+            else:
                 break
-        else:
-            break
 
+    def stopCameraRecording(self):
+        self.is_recording = False
 
-def disconnectCamera(video_capture, video_writer):
-    video_capture.release()
-    video_writer.release()
-    cv2.destroyAllWindows()
+    def disconnectCamera(self):
+        self.stopCameraRecording()
+        self.cap.release()
+        self.out.release()
+        cv2.destroyAllWindows()
+        self.camera_thread.join()
+        self.resetCamera()
+
+    def resetCamera(self):
+        self.cap = None
+        self.out = None
+        self.camera_thread = None
 
 
 if __name__ == "__main__":
-    capL, outL = connectCamera("cL", 0)
-    capR, outR = connectCamera("cR", 1)
-    threads = []
-    threads.append(startCameraRecording(capL, outL, "cL"))
-    threads.append(startCameraRecording(capR, outR, "cR"))
+    camL = CameraHandler("cL")
+    camR = CameraHandler("cR")
+    camL.connectCamera(0)
+    camR.connectCamera(1)
+    camL.startCameraRecording()
+    camR.startCameraRecording()
     while True:
         x = input("Press h to end the test")
         if x == "h":
             break
-    disconnectCamera(capL, outL)
-    disconnectCamera(capR, outR)
-    for t in threads:
-        t.join()
+        elif x == "j":
+            camL.stopCameraRecording()
+            camR.stopCameraRecording()
+        elif x == "k":
+            camL.startCameraRecording()
+            camR.startCameraRecording()
+    camL.disconnectCamera()
+    camR.disconnectCamera()
