@@ -682,9 +682,14 @@ class MainWindow(wx.Frame):
         new_time = time.time() - self.origin_time
         gps_x = (new_longitude - self.origin_longitude) * self.F_lon
         gps_y = (new_latitude - self.origin_latitude) * self.F_lat
-        old_time = self.previous_measurements[label + "/Time"]
-        old_x = self.previous_measurements[label + "/X"]
-        old_y = self.previous_measurements[label + "/Y"]
+        if self.numReadings == 0:
+            old_time = 0
+            old_x = 0
+            old_y = 0
+        else:
+            old_time = self.previous_measurements[label + "/Time"]
+            old_x = self.previous_measurements[label + "/X"]
+            old_y = self.previous_measurements[label + "/Y"]
         heading_radians = math.atan2(gps_y - old_y, gps_x - old_x)
         velocity = math.sqrt((gps_x - old_x) ** 2 + (gps_y - old_y) ** 2) / (
             new_time - old_time
