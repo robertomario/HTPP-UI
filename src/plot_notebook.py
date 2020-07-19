@@ -41,7 +41,9 @@ class Plot(wx.Panel):
         Used when the number of sensors changes (from Ports dialog)
         """
         ax = self.figure.gca()
-        ax.get_legend().remove()
+        legend = ax.get_legend()
+        if legend is not None:
+            legend.remove()
         self.addCustomLegend(device_name, scaling, num_sensors)
 
     def addCustomLegend(self, device_name, scaling, num_sensors):
