@@ -197,38 +197,41 @@ class CameraFrame(wx.Frame):
         upBox.Add(self.camL, proportion=1, flag=wx.EXPAND)
         upBox.Add(self.camR, proportion=1, flag=wx.EXPAND)
         downBox = wx.BoxSizer(wx.HORIZONTAL)
-        connect_btn = wx.Button(mainPanel, label="Connect")
-        connect_btn.Bind(wx.EVT_BUTTON, self.OnConnect)
-        disconnect_btn = wx.Button(mainPanel, label="Disconnect")
-        disconnect_btn.Bind(wx.EVT_BUTTON, self.OnDisconnect)
-        pause_btn = wx.Button(mainPanel, label="Pause")
-        pause_btn.Bind(wx.EVT_BUTTON, self.OnPause)
-        resume_btn = wx.Button(mainPanel, label="Resume")
-        resume_btn.Bind(wx.EVT_BUTTON, self.OnResume)
+        connect_btn = wx.ToggleButton(mainPanel, label="Connect")
+        connect_btn.Bind(wx.EVT_TOGGLEBUTTON, self.OnConnect)
+        record_btn = wx.ToggleButton(mainPanel, label="Record")
+        record_btn.Bind(wx.EVT_TOGGLEBUTTON, self.OnResume)
         downBox.Add(connect_btn, proportion=0)
-        downBox.Add(disconnect_btn, proportion=0)
-        downBox.Add(pause_btn, proportion=0)
-        downBox.Add(resume_btn, proportion=0)
+        downBox.Add(record_btn, proportion=0)
         outerBox.Add(upBox, proportion=1, flag=wx.EXPAND)
         outerBox.Add(downBox, proportion=0, flag=wx.ALIGN_CENTER)
         mainPanel.SetSizer(outerBox)
         self.SetSize(2 * cam_width + 15, cam_height + 70)
+        self.Center()
 
     def OnConnect(self, event):
-        self.camL.connect(0)
-        self.camR.connect(1)
-
-    def OnDisconnect(self, event):
-        self.camL.disconnect()
-        self.camR.disconnect()
-
-    def OnPause(self, event):
-        self.camL.pauseRecording()
-        self.camR.pauseRecording()
+        btn = event.GetEventObject()
+        is_pressed = btn.GetValue()
+        if is_pressed:
+            btn.SetLabelText("Disconnect")
+            self.camL.connect(0)
+            self.camR.connect(1)
+        else:
+            btn.SetLabelText("Connect")
+            self.camL.disconnect()
+            self.camR.disconnect()
 
     def OnResume(self, event):
-        self.camL.resumeRecording()
-        self.camR.resumeRecording()
+        btn = event.GetEventObject()
+        is_pressed = btn.GetValue()
+        if is_pressed:
+            btn.SetLabelText("Pause")
+            self.camL.resumeRecording()
+            self.camR.resumeRecording()
+        else:
+            btn.SetLabelText("Record")
+            self.camL.pauseRecording()
+            self.camR.pauseRecording()
 
 
 if __name__ == "__main__":
