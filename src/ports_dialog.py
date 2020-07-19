@@ -7,13 +7,10 @@ import sys
 
 from wx.lib.scrolledpanel import ScrolledPanel
 import serial
+import cv2
 import wx
 
 # Dict to hold the sensor names and scaling behavior
-# m >> Multispectral
-# u >> Ultrasonic
-# g >> GPS
-# e >> Environmental
 # In this context, the scaling of the sensor means that the system could
 # incorporate different numbers of that sensor without any limit other than
 # how many there are available. On the other hand, it would be unexpected to
@@ -55,6 +52,7 @@ class PortsDialog(wx.Dialog):
     def initUI(self, num_sensors):
         """ Define dialog elements """
         ports = [""] + self.getSerialPorts()
+        cameras = [""] + self.getCameraPorts()
 
         vbox0 = wx.BoxSizer(wx.VERTICAL)
         pnl = ScrolledPanel(self)
@@ -95,6 +93,14 @@ class PortsDialog(wx.Dialog):
             vbox1.Add(
                 vbox_aux, proportion=1, border=10, flag=wx.TOP | wx.BOTTOM | wx.EXPAND
             )
+        vbox_aux = wx.BoxSizer(wx.VERTICAL)
+        st_aux = wx.StaticText(pnl, label="Camera", size=(120, 30))
+        vbox_aux.Add(st_aux, proportion=0, flag=wx.ALL)
+        vbox1.Add(
+            vbox_aux, proportion=1, border=10, flag=wx.TOP | wx.BOTTOM | wx.EXPAND
+        )
+        self.addCheckComboBoxes(vbox_aux, pnl, cameras, "Camera", "L")
+        self.addCheckComboBoxes(vbox_aux, pnl, cameras, "Camera", "R")
         pnl.SetSizer(vbox1)
         pnl.SetupScrolling()
 
@@ -181,6 +187,20 @@ class PortsDialog(wx.Dialog):
             except (OSError, serial.SerialException):
                 pass
         return result
+
+    def getCameraPorts(self, initial_number=0, final_number=10):
+        available_ports = []
+        for i in range(initial_number, final_number):
+            try:
+                cap = cv2.VideoCapture(i, cv2.CAP_DSHOW)
+                ret, frame = cap.read()
+            except Exception as e:
+                pass
+            else:
+                cap.release()
+                if ret:
+                    available_ports.append(str(i))
+        return available_ports
 
     def addCheckComboBoxes(self, boxSizer, pnl, comboOptions, name, side, number=None):
         """ Add a combobox and a checkbox that controls if it is enabled

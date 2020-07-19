@@ -91,21 +91,6 @@ class CameraHandler:
         self.out = None
         self.camera_thread = None
 
-    @classmethod
-    def findPorts(cls, initial_number=0, final_number=10):
-        available_ports = []
-        for i in range(initial_number, final_number):
-            try:
-                cap = cv2.VideoCapture(i, cv2.CAP_DSHOW)
-                ret, frame = cap.read()
-            except Exception as e:
-                pass
-            else:
-                cap.release()
-                if ret:
-                    available_ports.append(i)
-        return available_ports
-
 
 class CameraPanel(wx.Panel):
     def __init__(self, parent, label):
@@ -275,6 +260,6 @@ class CameraFrame(wx.Frame):
 
 if __name__ == "__main__":
     app = wx.App()
-    frame = CameraFrame(None, [None, None])
+    frame = CameraFrame(None, [0, 1])
     frame.Show()
     app.MainLoop()
