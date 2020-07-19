@@ -257,6 +257,15 @@ class CameraFrame(wx.Frame):
             if self.camR is not None:
                 self.camR.pauseRecording()
 
+    def close(self):
+        if self.camL is not None:
+            self.camL.pauseRecording()
+            self.camL.disconnect()
+        if self.camR is not None:
+            self.camR.pauseRecording()
+            self.camR.disconnect()
+        self.Destroy()
+
 
 if __name__ == "__main__":
     app = wx.App()

@@ -11,12 +11,12 @@ import os
 import numpy as np
 import wx
 
+from .sensors import openPort, getSensorReading
+from .ports_dialog import PortsDialog, devices
 from .plot_notebook import Plot, PlotNotebook
 from .repeated_timer import RepeatedTimer
 from .layout_dialog import LayoutDialog
-from .ports_dialog import PortsDialog, devices
-from .sensors import openPort, getSensorReading
-
+from .camera_handler import CameraFrame
 
 # Dict to hold which sensor is the source for each measured variable
 # m >> Multispectral
@@ -99,6 +99,8 @@ class MainWindow(wx.Frame):
         super(MainWindow, self).__init__(*args, **kwargs)
         self.cfg = wx.Config("HTPPconfig")
         self.cfg.WriteBool("notEmpty", True)
+        self.camera_frame = CameraFrame(self, self.updateCameraPorts())
+        self.camera_frame.Bind(wx.EVT_CLOSE, self.OnCameraClose)
         self.labels = []
         self.axes = {}
         self.label_to_device = {}
@@ -134,6 +136,11 @@ class MainWindow(wx.Frame):
         settingsMenu.Append(clearmi)
         self.Bind(wx.EVT_MENU, self.OnClear, clearmi)
         menubar.Append(settingsMenu, "&Settings")
+
+        viewMenu = wx.Menu()
+        self.camerami = viewMenu.AppendCheckItem(wx.ID_ANY, "&Camera")
+        self.Bind(wx.EVT_MENU, self.OnCamera, self.camerami)
+        menubar.Append(viewMenu, "&View")
 
         helpMenu = wx.Menu()
         aboutmi = wx.MenuItem(helpMenu, wx.ID_ABOUT, "&About")
@@ -250,6 +257,15 @@ class MainWindow(wx.Frame):
         """ Toolbar option to exit application """
         self.Close()
 
+    def OnCamera(self, e):
+        self.camera_frame.Show(self.camerami.IsChecked())
+
+    def OnCameraClose(self, e):
+        self.camerami.Check(False)
+        self.camera_frame.close()
+        self.camera_frame = CameraFrame(self, self.updateCameraPorts())
+        self.camera_frame.Hide()
+
     def OnAbout(self, e):
         """ Toolbar option to show About dialog """
         wx.MessageBox(
@@ -279,6 +295,9 @@ class MainWindow(wx.Frame):
             self.logSettings()
             self.labels = self.getLabels()
             self.plotter.redoLegend(variables, devices, num_sensors)
+            self.camera_frame.close()
+            self.camera_frame = CameraFrame(self, self.updateCameraPorts())
+            self.camera_frame.Show(self.camerami.IsChecked())
         pDialog.Destroy()
 
     def OnLayout(self, e):
@@ -758,6 +777,20 @@ class MainWindow(wx.Frame):
                 labels.append(initial + "L")
                 labels.append(initial + "R")
         return labels
+
+    def updateCameraPorts(self):
+        camera_ports = [None, None]
+        if self.cfg.ReadBool("connectedcL", False):
+            try:
+                camera_ports[0] = int(self.cfg.Read("portcL", ""))
+            except Exception as e:
+                pass
+        if self.cfg.ReadBool("connectedcR", False):
+            try:
+                camera_ports[1] = int(self.cfg.Read("portcR", ""))
+            except Exception as e:
+                pass
+        return camera_ports
 
     def disconnect(self):
         """ Disconnect from all serial sensors """
