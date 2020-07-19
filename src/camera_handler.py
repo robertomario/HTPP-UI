@@ -184,18 +184,49 @@ class CameraPanel(wx.Panel):
 
 
 class CameraFrame(wx.Frame):
-    def __init__(self, parent):
+    def __init__(self, parent, camera_ports):
         wx.Frame.__init__(self, parent=parent, title="Camera frame")
+        if (camera_ports[0] is not None) or (camera_ports[1] is not None):
+            self.camera_ports = camera_ports
+            self.InitUI(parent)
+        else:
+            wx.MessageBox(
+                ("No camera ports have been defined \n" + "Camera frame will close"),
+                "Warning",
+                wx.OK | wx.ICON_ERROR,
+            )
+            self.DestroyLater()
+
+    def InitUI(self, parent):
         mainPanel = wx.Panel(self)
         outerBox = wx.BoxSizer(wx.VERTICAL)
         upBox = wx.BoxSizer(wx.HORIZONTAL)
-        self.camL = CameraPanel(mainPanel, "cL")
-        self.camR = CameraPanel(mainPanel, "cR")
-        cam_width, cam_height = self.camL.camera.getSize()
-        self.camL.SetSize(cam_width, cam_height)
-        self.camR.SetSize(cam_width, cam_height)
-        upBox.Add(self.camL, proportion=1, flag=wx.EXPAND)
-        upBox.Add(self.camR, proportion=1, flag=wx.EXPAND)
+        if self.camera_ports[0] is not None:
+            self.camL = CameraPanel(mainPanel, "cL")
+            upBox.Add(self.camL, proportion=1, flag=wx.EXPAND)
+            cam_width = self.camL.camera.width
+            cam_height = self.camL.camera.height
+        else:
+            self.camL = None
+            st = wx.StaticText(
+                mainPanel,
+                label="Undefined port for left camera",
+                style=wx.ALIGN_CENTER_HORIZONTAL,
+            )
+            upBox.Add(st, proportion=1, flag=wx.EXPAND)
+        if self.camera_ports[1] is not None:
+            self.camR = CameraPanel(mainPanel, "cR")
+            upBox.Add(self.camR, proportion=1, flag=wx.EXPAND)
+            cam_width = self.camR.camera.width
+            cam_height = self.camR.camera.height
+        else:
+            self.camR = None
+            st = wx.StaticText(
+                mainPanel,
+                label="Undefined port for right camera",
+                style=wx.ALIGN_CENTER_HORIZONTAL,
+            )
+            upBox.Add(st, proportion=1, flag=wx.EXPAND)
         downBox = wx.BoxSizer(wx.HORIZONTAL)
         connect_btn = wx.ToggleButton(mainPanel, label="Connect")
         connect_btn.Bind(wx.EVT_TOGGLEBUTTON, self.OnConnect)
@@ -214,28 +245,36 @@ class CameraFrame(wx.Frame):
         is_pressed = btn.GetValue()
         if is_pressed:
             btn.SetLabelText("Disconnect")
-            self.camL.connect(0)
-            self.camR.connect(1)
+            if self.camL is not None:
+                self.camL.connect(self.camera_ports[0])
+            if self.camR is not None:
+                self.camR.connect(self.camera_ports[1])
         else:
             btn.SetLabelText("Connect")
-            self.camL.disconnect()
-            self.camR.disconnect()
+            if self.camL is not None:
+                self.camL.disconnect()
+            if self.camR is not None:
+                self.camR.disconnect()
 
     def OnResume(self, event):
         btn = event.GetEventObject()
         is_pressed = btn.GetValue()
         if is_pressed:
             btn.SetLabelText("Pause")
-            self.camL.resumeRecording()
-            self.camR.resumeRecording()
+            if self.camL is not None:
+                self.camL.resumeRecording()
+            if self.camR is not None:
+                self.camR.resumeRecording()
         else:
             btn.SetLabelText("Record")
-            self.camL.pauseRecording()
-            self.camR.pauseRecording()
+            if self.camL is not None:
+                self.camL.pauseRecording()
+            if self.camR is not None:
+                self.camR.pauseRecording()
 
 
 if __name__ == "__main__":
     app = wx.App()
-    frame = CameraFrame(None)
+    frame = CameraFrame(None, [None, None])
     frame.Show()
     app.MainLoop()
