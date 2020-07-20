@@ -12,10 +12,7 @@ import serial
 
 def openPort(port, label):
     """ Utility function to connect to serial device """
-    if label[0] == "g":
-        baudrate = 9600
-    else:
-        baudrate = 38400
+    baudrate = 38400
     device = serial.Serial(port, baudrate)
     return device
 
@@ -91,13 +88,14 @@ def getMultispectralReading(device, numValues=3, is_new_model=True):
                 pass
             else:
                 measurements = message.split(",")
-                for j, measure in enumerate(measurements):
-                    try:
-                        aux = float(measure)
-                    except Exception as e:
-                        pass
-                    else:
-                        values[i, j + 1] = aux
+                if len(measurements) == 8:
+                    for j, measure in enumerate(measurements):
+                        try:
+                            aux = float(measure)
+                        except Exception as e:
+                            pass
+                        else:
+                            values[i, j + 1] = aux
         values[:, 0] = (values[:, 7] / values[:, 6]) - 1
     else:
         values = np.empty((numValues, 6))
@@ -180,22 +178,17 @@ def getGPSReading(device, numValues=2):
     while count < numValues:
         try:
             message = device.readline().strip().decode()
+            parsedMessage = pynmea2.parse(message)
             if message[0:6] == "$GPGGA":
                 count += 1
-        except Exception as e:
-            pass
-        else:
-            try:
-                parsedMessage = pynmea2.parse(message)
-            except Exception as e:
-                pass
-            else:
                 # Both longitude and latitude being 0 simultaneously is way
                 # more likely to be a blank measurement than actually that
                 # point
                 if (parsedMessage.longitude != 0) or (parsedMessage.latitude != 0):
                     values[count, 0] = parsedMessage.longitude
                     values[count, 1] = parsedMessage.latitude
+        except Exception as e:
+            pass
     finalMeasurement = np.nanmean(values, axis=0)
     return finalMeasurement
 
@@ -224,10 +217,9 @@ def getEnvironmentalReading(device, numValues=3):
             print(str(e))
         else:
             measurements = message.split(",")
-            for j, measure in enumerate(measurements):
-                # Only care about the first 6 measurements, as the rest are
-                # generic analog channels
-                if j < 6:
+            if len(measurements) == 8:
+                # Only care about the first 6 measurements, as the rest are not used
+                for j, measure in enumerate(measurements[:6]):
                     try:
                         aux = float(measure)
                     except Exception as e:
@@ -429,8 +421,8 @@ def processGPS(
         old_y = 0
     else:
         old_time = previous_measurements[label + "/Time"]
-        old_x = previous_measurements[label + "/X"]
-        old_y = previous_measurements[label + "/Y"]
+        old_x = previous_measurements[label + "/GPS_X"]
+        old_y = previous_measurements[label + "/GPS_Y"]
     heading_radians = math.atan2(gps_y - old_y, gps_x - old_x)
     velocity = math.sqrt((gps_x - old_x) ** 2 + (gps_y - old_y) ** 2) / (
         new_time - old_time
@@ -457,5 +449,15 @@ def processGPS(
     else:
         return None
     return np.array(
-        [someValue[0], someValue[1], vehicle_x, vehicle_y, heading, velocity, new_time]
+        [
+            someValue[0],
+            someValue[1],
+            gps_x,
+            gps_y,
+            vehicle_x,
+            vehicle_y,
+            heading,
+            velocity,
+            new_time,
+        ]
     )
