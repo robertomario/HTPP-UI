@@ -71,7 +71,10 @@ class MainWindow(wx.Frame):
             in a hidden folder to store values. These values are kept if the
             program stops running and even if the computers turns off. It uses
             a key-value system similar to dictionaries
+        btn_connect (wx.ToggleButton): Button to toggle connect/disconnect
+        btn_start (wx.ToggleButton): Button to toggle start/stop reading every second
         btn_test (wx.ToggleButton): Button to toggle in and out of 'Test Mode'
+        btn_measure (wx.Button): Button to take a single set of readings
         logText (wx.TextCtrl): Control where information is logged
         camera_frame (CameraFrame): Secondary frame to display video from cameras
         mapAxes (matplotlib.Axes): Axes to create map plot
@@ -193,19 +196,21 @@ class MainWindow(wx.Frame):
         middleBox.Add(self.plotter, proportion=7, flag=wx.EXPAND | wx.ALL, border=20)
 
         rightBox = wx.BoxSizer(wx.VERTICAL)
-        btn_connect = wx.ToggleButton(backgroundPanel, label="Connect")
-        btn_start = wx.ToggleButton(backgroundPanel, label="Start")
+        self.btn_connect = wx.ToggleButton(backgroundPanel, label="Connect")
+        self.btn_start = wx.ToggleButton(backgroundPanel, label="Start")
+        self.btn_start.Disable()
         self.btn_test = wx.ToggleButton(backgroundPanel, label="Test Mode")
-        btn_measure = wx.Button(backgroundPanel, label="Measure")
+        self.btn_measure = wx.Button(backgroundPanel, label="Measure")
+        self.btn_measure.Disable()
         btn_erase = wx.Button(backgroundPanel, label="Erase")
-        btn_connect.Bind(wx.EVT_TOGGLEBUTTON, self.OnConnect)
-        btn_start.Bind(wx.EVT_TOGGLEBUTTON, self.OnStart)
-        btn_measure.Bind(wx.EVT_BUTTON, self.OnMeasure)
+        self.btn_connect.Bind(wx.EVT_TOGGLEBUTTON, self.OnConnect)
+        self.btn_start.Bind(wx.EVT_TOGGLEBUTTON, self.OnStart)
+        self.btn_measure.Bind(wx.EVT_BUTTON, self.OnMeasure)
         btn_erase.Bind(wx.EVT_BUTTON, self.OnErase)
-        rightBox.Add(btn_connect, proportion=1, flag=wx.EXPAND | wx.ALL, border=20)
-        rightBox.Add(btn_start, proportion=1, flag=wx.EXPAND | wx.ALL, border=20)
+        rightBox.Add(self.btn_connect, proportion=1, flag=wx.EXPAND | wx.ALL, border=20)
+        rightBox.Add(self.btn_start, proportion=1, flag=wx.EXPAND | wx.ALL, border=20)
         rightBox.Add(self.btn_test, proportion=1, flag=wx.EXPAND | wx.ALL, border=20)
-        rightBox.Add(btn_measure, proportion=1, flag=wx.EXPAND | wx.ALL, border=20)
+        rightBox.Add(self.btn_measure, proportion=1, flag=wx.EXPAND | wx.ALL, border=20)
         rightBox.Add(btn_erase, proportion=1, flag=wx.EXPAND | wx.ALL, border=20)
 
         outerBox.Add(leftBox, proportion=2, flag=wx.EXPAND | wx.ALL, border=20)
@@ -361,13 +366,13 @@ class MainWindow(wx.Frame):
         is_test_mode = self.btn_test.GetValue()
         if is_test_mode:
             if is_pressed:
-                btn.SetLabelText("Disconnect")
                 for label in self.labels:
                     if (label[0] == "g") and self.cfg.ReadBool(
                         "connected" + label, False
                     ):
                         reading = [-73.939830, 45.423804]
                         self.GPS_constants = setupGPSProjection(reading)
+                btn.SetLabelText("Disconnect")
             else:
                 btn.SetLabelText("Connect")
         else:
@@ -399,6 +404,9 @@ class MainWindow(wx.Frame):
             else:
                 self.disconnect()
                 btn.SetLabelText("Connect")
+        self.btn_start.Enable(is_pressed)
+        self.btn_measure.Enable(is_pressed)
+        self.btn_test.Enable(not is_pressed)
 
     def OnStart(self, e):
         """ Button action to take measurements periodically
@@ -412,15 +420,18 @@ class MainWindow(wx.Frame):
         btn = e.GetEventObject()
         is_pressed = btn.GetValue()
         if is_pressed:
-            btn.SetLabelText("Stop")
             is_test_mode = self.btn_test.GetValue()
             if is_test_mode:
                 self.rt = RepeatedTimer(1, self.simulateSensorReadings)
             else:
                 self.rt = RepeatedTimer(1, self.getAllReadings)
+            btn.SetLabelText("Stop")
         else:
-            btn.SetLabelText("Start")
             self.rt.stop()
+            btn.SetLabelText("Start")
+        self.btn_connect.Enable(not is_pressed)
+        self.btn_measure.Enable(not is_pressed)
+        self.btn_test.Enable(not is_pressed)
 
     def OnMeasure(self, e):
         """ Button action to take a single set of measurements
