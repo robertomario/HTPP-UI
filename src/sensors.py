@@ -2,6 +2,9 @@
 
 # Author: Roberto Buelvas
 
+import math
+import time
+
 import numpy as np
 import pynmea2
 import serial
@@ -368,3 +371,81 @@ def getOpenEnvironmentalReading(port, numValues=10):
     finalMeasurement = [measure / numValues for measure in finalMeasurement]
     serialDAS.close()
     return finalMeasurement
+
+
+def setupGPSProjection(reading):
+    origin_time = time.time()
+    origin_latitude = math.pi * reading[1] / 180
+    origin_longitude = math.pi * reading[0] / 180
+    a = 6378137  # Earth's semimajor axis
+    b = 6356752.3142  # Earth's semiminor axis
+    h = 20  # Current elevation over sea level
+    c = math.sqrt(
+        (a * math.cos(origin_latitude)) ** 2 + (b * math.sin(origin_latitude)) ** 2
+    )
+    F_lon = math.cos(origin_latitude) * ((a ** 2 / c) + h)
+    F_lat = ((a * b) ** 2 / c ** 3) + h
+    return [origin_time, origin_longitude, origin_latitude, F_lon, F_lat]
+
+
+def processGPS(
+    someValue, label, GPS_constants, num_readings, previous_measurements, cfg
+):
+    """ Estimates heading and velocity from GPS readings
+
+    The first time this method is called in a survey, it defines the
+    conversion to planar coordinate system. Every subsequent call after
+    uses the mentioned conversion to project the measurements and create
+    X and Y values, and also uses the immediately previous measurement to
+    estimate heading and velocity
+    The elevation has been temporarily hard-coded, but it should be made
+    adjustable as a setting
+    The reported X and Y values are of the vehicle defined as the middle
+    point of the toolbar that holds the sensors
+    """
+    origin_time = GPS_constants[0]
+    origin_longitude = GPS_constants[1]
+    origin_latitude = GPS_constants[2]
+    F_lon = GPS_constants[3]
+    F_lat = GPS_constants[4]
+    new_longitude = math.pi * someValue[0] / 180
+    new_latitude = math.pi * someValue[1] / 180
+    new_time = time.time() - origin_time
+    gps_x = (new_longitude - origin_longitude) * F_lon
+    gps_y = (new_latitude - origin_latitude) * F_lat
+    if num_readings == 0:
+        old_time = 0
+        old_x = 0
+        old_y = 0
+    else:
+        old_time = previous_measurements[label + "/Time"]
+        old_x = previous_measurements[label + "/X"]
+        old_y = previous_measurements[label + "/Y"]
+    heading_radians = math.atan2(gps_y - old_y, gps_x - old_x)
+    velocity = math.sqrt((gps_x - old_x) ** 2 + (gps_y - old_y) ** 2) / (
+        new_time - old_time
+    )
+    heading = 180 * heading_radians / math.pi
+    if (label[1] == "L") and cfg.HasEntry("DGLX"):
+        dgx = cfg.ReadFloat("DGLX") / 100
+        dgy = cfg.ReadFloat("DGLY") / 100
+        vehicle_x = (
+            gps_x + dgx * math.sin(heading_radians) - dgy * math.cos(heading_radians)
+        )
+        vehicle_y = (
+            gps_y - dgx * math.cos(heading_radians) - dgy * math.sin(heading_radians)
+        )
+    elif (label[1] == "R") and cfg.HasEntry("DGRX"):
+        dgx = cfg.ReadFloat("DGRX") / 100
+        dgy = cfg.ReadFloat("DGRY") / 100
+        vehicle_x = (
+            gps_x - dgx * math.sin(heading_radians) - dgy * math.cos(heading_radians)
+        )
+        vehicle_y = (
+            gps_y + dgx * math.cos(heading_radians) - dgy * math.sin(heading_radians)
+        )
+    else:
+        return None
+    return np.array(
+        [someValue[0], someValue[1], vehicle_x, vehicle_y, heading, velocity, new_time]
+    )

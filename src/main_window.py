@@ -11,7 +11,7 @@ import os
 import numpy as np
 import wx
 
-from .sensors import openPort, getSensorReading
+from .sensors import openPort, getSensorReading, setupGPSProjection, processGPS
 from .ports_dialog import PortsDialog, devices
 from .plot_notebook import Plot, PlotNotebook
 from .repeated_timer import RepeatedTimer
@@ -36,7 +36,7 @@ variables = {
         "Red",
     ],
     "u": ["Distance"],
-    "g": ["Latitude", "Longitude", "X", "Y", "Heading", "Velocity", "Time"],
+    "g": ["Longitude", "Latitude", "X", "Y", "Heading", "Velocity", "Time"],
     "e": [
         "Canopy Temperature",
         "Air Temperature",
@@ -353,47 +353,47 @@ class MainWindow(wx.Frame):
         """
         btn = e.GetEventObject()
         is_pressed = btn.GetValue()
-        if is_pressed:
-            btn.SetLabelText("Disconnect")
-            self.label_to_device = {}
-            for label in self.labels:
-                if self.cfg.ReadBool("connected" + label, False):
-                    port = self.cfg.Read("port" + label)
-                    if port == "":
-                        wx.MessageBox(
-                            (
-                                "The port for "
-                                + label
-                                + "has not been properly selected"
-                            ),
-                            "Empty port",
-                            wx.OK | wx.ICON_WARNING,
-                        )
-                        break
-                    else:
-                        device = openPort(port, label)
-                        self.label_to_device[label] = device
-                        if label[0] == "g":
-                            reading = np.array([np.nan, np.nan])
-                            while any(np.isnan(reading)):
-                                reading = getSensorReading(device, label)
-                            self.origin_time = time.time()
-                            self.origin_latitude = math.pi * reading[1] / 180
-                            self.origin_longitude = math.pi * reading[0] / 180
-                            a = 6378137  # Earth's semimajor axis
-                            b = 6356752.3142  # Earth's semiminor axis
-                            h = 20  # Current elevation over sea level
-                            c = math.sqrt(
-                                (a * math.cos(self.origin_latitude)) ** 2
-                                + (b * math.sin(self.origin_latitude)) ** 2
-                            )
-                            self.F_lon = math.cos(self.origin_latitude) * (
-                                (a ** 2 / c) + h
-                            )
-                            self.F_lat = ((a * b) ** 2 / c ** 3) + h
+        is_test_mode = self.btn_test.GetValue()
+        if is_test_mode:
+            if is_pressed:
+                btn.SetLabelText("Disconnect")
+                for label in self.labels:
+                    if (label[0] == "g") and self.cfg.ReadBool(
+                        "connected" + label, False
+                    ):
+                        reading = [-73.939830, 45.423804]
+                        self.GPS_constants = setupGPSProjection(reading)
+            else:
+                btn.SetLabelText("Connect")
         else:
-            btn.SetLabelText("Connect")
-            self.disconnect()
+            if is_pressed:
+                btn.SetLabelText("Disconnect")
+                self.label_to_device = {}
+                for label in self.labels:
+                    if self.cfg.ReadBool("connected" + label, False):
+                        port = self.cfg.Read("port" + label, "")
+                        if port == "":
+                            wx.MessageBox(
+                                (
+                                    "The port for "
+                                    + label
+                                    + "has not been properly selected"
+                                ),
+                                "Empty port",
+                                wx.OK | wx.ICON_WARNING,
+                            )
+                            break
+                        else:
+                            device = openPort(port, label)
+                            self.label_to_device[label] = device
+                            if label[0] == "g":
+                                reading = np.array([np.nan, np.nan])
+                                while any(np.isnan(reading)):
+                                    reading = getSensorReading(device, label)
+                                self.GPS_constants = setupGPSProjection(reading)
+            else:
+                btn.SetLabelText("Connect")
+                self.disconnect()
 
     def OnStart(self, e):
         """ Button action to take measurements periodically
@@ -460,7 +460,7 @@ class MainWindow(wx.Frame):
                     reading = []
                     for i in range(len(variables[label[0]])):
                         reading.append(random.random())
-                self.updateUI(reading, label)
+                self.updateUI(np.array(reading), label)
         self.plotter.refresh()
         self.numReadings += 1
 
@@ -487,12 +487,28 @@ class MainWindow(wx.Frame):
         This is a general method that calls the more specific ones if necessary
         """
         if label[0] == "g":
-            values = self.processGPS(someValue, label)
-            self.updateMap(values, label)
+            values = processGPS(
+                someValue,
+                label,
+                self.GPS_constants,
+                self.numReadings,
+                self.previous_measurements,
+                self.cfg,
+            )
+            if values is None:
+                wx.MessageBox(
+                    ("The dimensions in Layout have not been " + "properly set"),
+                    "Empty port",
+                    wx.OK | wx.ICON_WARNING,
+                )
+            else:
+                self.updateMap(values, label)
+                self.updateLog(values, label)
+                self.updatePlot(values, label)
         else:
             values = someValue
-        self.updateLog(values, label)
-        self.updatePlot(values, label)
+            self.updateLog(values, label)
+            self.updatePlot(values, label)
 
     def updateLog(self, someValue, label):
         """ Update log text after receiving new sensor data """
@@ -609,7 +625,7 @@ class MainWindow(wx.Frame):
         at least two measurements are required to compute the heading, which
         in turn is required to know how to orient the sensor markers
         """
-        if (self.numReadings > 0) and not any(np.isnan(someValue[2:5])):
+        if (self.numReadings > 0) and (not any(np.isnan(someValue[2:5]))):
             vehicle_x = someValue[2]
             vehicle_y = someValue[3]
             heading_radians = math.pi * someValue[4] / 180
@@ -665,82 +681,6 @@ class MainWindow(wx.Frame):
                         markerfacecolor=color,
                     )
             self.mapPanel.refresh()
-
-    def processGPS(self, someValue, label):
-        """ Estimates heading and velocity from GPS readings
-
-        The first time this method is called in a survey, it defines the
-        conversion to planar coordinate system. Every subsequent call after
-        uses the mentioned conversion to project the measurements and create
-        X and Y values, and also uses the immediately previous measurement to
-        estimate heading and velocity
-        The elevation has been temporarily hard-coded, but it should be made
-        adjustable as a setting
-        The reported X and Y values are of the vehicle defined as the middle
-        point of the toolbar that holds the sensors
-        """
-        new_longitude = math.pi * someValue[0] / 180
-        new_latitude = math.pi * someValue[1] / 180
-        new_time = time.time() - self.origin_time
-        gps_x = (new_longitude - self.origin_longitude) * self.F_lon
-        gps_y = (new_latitude - self.origin_latitude) * self.F_lat
-        if self.numReadings == 0:
-            old_time = 0
-            old_x = 0
-            old_y = 0
-        else:
-            old_time = self.previous_measurements[label + "/Time"]
-            old_x = self.previous_measurements[label + "/X"]
-            old_y = self.previous_measurements[label + "/Y"]
-        heading_radians = math.atan2(gps_y - old_y, gps_x - old_x)
-        velocity = math.sqrt((gps_x - old_x) ** 2 + (gps_y - old_y) ** 2) / (
-            new_time - old_time
-        )
-        heading = 180 * heading_radians / math.pi
-        if (label[1] == "L") and self.cfg.HasEntry("DGLX"):
-            dgx = self.cfg.ReadFloat("DGLX") / 100
-            dgy = self.cfg.ReadFloat("DGLY") / 100
-            vehicle_x = (
-                gps_x
-                + dgx * math.sin(heading_radians)
-                - dgy * math.cos(heading_radians)
-            )
-            vehicle_y = (
-                gps_y
-                - dgx * math.cos(heading_radians)
-                - dgy * math.sin(heading_radians)
-            )
-        elif (label[1] == "R") and self.cfg.HasEntry("DGRX"):
-            dgx = self.cfg.ReadFloat("DGRX") / 100
-            dgy = self.cfg.ReadFloat("DGRY") / 100
-            vehicle_x = (
-                gps_x
-                - dgx * math.sin(heading_radians)
-                - dgy * math.cos(heading_radians)
-            )
-            vehicle_y = (
-                gps_y
-                + dgx * math.cos(heading_radians)
-                - dgy * math.sin(heading_radians)
-            )
-        else:
-            wx.MessageBox(
-                ("The dimensions in Layout have not been " + "properly set"),
-                "Empty port",
-                wx.OK | wx.ICON_WARNING,
-            )
-            return 0
-        return np.array(
-            [
-                someValue[0],
-                someValue[1],
-                vehicle_x,
-                vehicle_y,
-                heading,
-                velocity,
-                new_time,
-            ]
-        )
 
     def logSettings(self):
         """ Append settings to log """
@@ -812,8 +752,4 @@ class MainWindow(wx.Frame):
         self.numReadings = 0
         self.lastRecord = [0]
         self.previous_measurements = {}
-        self.origin_longitude = 180
-        self.origin_latitude = 90
-        self.F_lon = 0
-        self.F_lat = 0
-        self.origin_time = 0
+        self.GPS_constants = [0, 180, 90, 0, 0]
