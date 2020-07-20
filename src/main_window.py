@@ -362,7 +362,6 @@ class MainWindow(wx.Frame):
                 btn.SetLabelText("Connect")
         else:
             if is_pressed:
-                btn.SetLabelText("Disconnect")
                 self.label_to_device = {}
                 for label in self.labels:
                     if self.cfg.ReadBool("connected" + label, False):
@@ -386,9 +385,10 @@ class MainWindow(wx.Frame):
                                 while any(np.isnan(reading)):
                                     reading = getSensorReading(device, label)
                                 self.GPS_constants = setupGPSProjection(reading)
+                btn.SetLabelText("Disconnect")
             else:
-                btn.SetLabelText("Connect")
                 self.disconnect()
+                btn.SetLabelText("Connect")
 
     def OnStart(self, e):
         """ Button action to take measurements periodically
