@@ -38,7 +38,17 @@ variables = {
         "Red",
     ],
     "u": ["Distance"],
-    "g": ["Longitude", "Latitude", "X", "Y", "Heading", "Velocity", "Time"],
+    "g": [
+        "Longitude",
+        "Latitude",
+        "GPS_X",
+        "GPS_Y",
+        "Vehicle_X",
+        "Vehicle_Y",
+        "Heading",
+        "Velocity",
+        "Time",
+    ],
     "e": [
         "Canopy Temperature",
         "Air Temperature",
@@ -448,9 +458,17 @@ class MainWindow(wx.Frame):
             if self.cfg.ReadBool("connected" + label, False):
                 if label[0] == "g":
                     reading = [
-                        -73.939830 + 0.001 * self.numReadings,
-                        45.423804 + 0.001 * self.numReadings,
+                        -73.939830 + 0.0001 * self.numReadings,
+                        45.423804 + 0.0001 * self.numReadings,
                     ]
+                    # reading = [
+                    #     -73.939830 + 0.0001 * random.random(),
+                    #     45.423804 + 0.0001 * random.random(),
+                    # ]
+                    # reading = [
+                    #     -73.939830 + 0.0001,
+                    #     45.423804 + 0.0001,
+                    # ]
                 else:
                     reading = []
                     for i in range(len(variables[label[0]])):
@@ -620,10 +638,10 @@ class MainWindow(wx.Frame):
         at least two measurements are required to compute the heading, which
         in turn is required to know how to orient the sensor markers
         """
-        if (self.numReadings > 0) and (not any(np.isnan(someValue[2:5]))):
-            vehicle_x = someValue[2]
-            vehicle_y = someValue[3]
-            heading_radians = math.pi * someValue[4] / 180
+        if (self.numReadings > 0) and (not any(np.isnan(someValue[4:7]))):
+            vehicle_x = someValue[4]
+            vehicle_y = someValue[5]
+            heading_radians = math.pi * someValue[6] / 180
             self.mapAxes.plot(vehicle_x, vehicle_y, "bs")
             for label in self.labels:
                 if (label[0] != "g") and self.cfg.ReadBool("connected" + label, False):

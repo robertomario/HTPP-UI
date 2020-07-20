@@ -421,8 +421,8 @@ def processGPS(
         old_y = 0
     else:
         old_time = previous_measurements[label + "/Time"]
-        old_x = previous_measurements[label + "/X"]
-        old_y = previous_measurements[label + "/Y"]
+        old_x = previous_measurements[label + "/GPS_X"]
+        old_y = previous_measurements[label + "/GPS_Y"]
     heading_radians = math.atan2(gps_y - old_y, gps_x - old_x)
     velocity = math.sqrt((gps_x - old_x) ** 2 + (gps_y - old_y) ** 2) / (
         new_time - old_time
@@ -449,5 +449,15 @@ def processGPS(
     else:
         return None
     return np.array(
-        [someValue[0], someValue[1], vehicle_x, vehicle_y, heading, velocity, new_time]
+        [
+            someValue[0],
+            someValue[1],
+            gps_x,
+            gps_y,
+            vehicle_x,
+            vehicle_y,
+            heading,
+            velocity,
+            new_time,
+        ]
     )
