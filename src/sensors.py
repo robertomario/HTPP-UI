@@ -66,7 +66,9 @@ def getMultispectralReading(device, numValues=3, is_new_model=True):
     compute myself from the reflectance values given because it might be useful
     for my research.
     The code currently cannot handle the older model because of the way the
-    variables dictionary is defined
+    variables dictionary is defined.
+    Whenever an Exception ocurrs, a value of None is given to the output.
+    numValues readings are taken and then averaged to produce the output.
     Units:
         CI: dimentionless
         NDRE: dimentionless
@@ -129,8 +131,10 @@ def getUltrasonicReading(device, numValues=3):
     For some reason, when connected to the computer by a serial monitor,
     instead of creating new messages it seems to modify the same bits over and
     over. That is why the way this sensor is read differs from the others.
+    Whenever an Exception ocurrs, a value of None is given to the output.
+    numValues readings are taken and then averaged to produce the output.
     Units:
-        mm
+        Distance: mm
     """
     try:
         count = 0
@@ -165,6 +169,8 @@ def getGPSReading(device, numValues=2):
     The sensor uses NMEA 0183 encoding for the messages
     Most of the measurements are ignored and just longitude and latitude are
     kept
+    Whenever an Exception ocurrs, a value of None is given to the output.
+    numValues readings are taken and then averaged to produce the output.
     Units:
         longitude, latitude: °
     """
@@ -197,7 +203,9 @@ def getGPSReading(device, numValues=2):
 def getEnvironmentalReading(device, numValues=3):
     """ Get reading from environmental sensor
 
-    The environmental sensor is DAS43X from Holland Scientific
+    The environmental sensor is DAS43X from Holland Scientific.
+    Whenever an Exception ocurrs, a value of None is given to the output.
+    numValues readings are taken and then averaged to produce the output.
     Units:
         Canopy temperature: °C
         Relative humidity: %
@@ -207,6 +215,7 @@ def getEnvironmentalReading(device, numValues=3):
         Atmospheric pressure: kPa
     """
     values = np.empty((numValues, 6))
+    values.fill(np.nan)
     for i in range(numValues):
         try:
             message = device.readline().strip().decode()
@@ -229,6 +238,7 @@ def getEnvironmentalReading(device, numValues=3):
     return finalMeasurement
 
 
+# getOpen functions are not made to handle Exceptions yet
 def getOpenMultispectralReading(port, numValues=10, is_new_model=True):
     """ Get reading from multispectral sensor
 
@@ -374,6 +384,11 @@ def getOpenEnvironmentalReading(port, numValues=10):
 
 
 def setupGPSProjection(reading):
+    """ Use 1 GPS reading to compute constants for projection to planar coordinates 
+    
+    The elevation has been temporarily hard-coded, but it should be made
+    adjustable as a setting
+    """
     origin_time = time.time()
     origin_latitude = math.pi * reading[1] / 180
     origin_longitude = math.pi * reading[0] / 180
@@ -393,13 +408,8 @@ def processGPS(
 ):
     """ Estimates heading and velocity from GPS readings
 
-    The first time this method is called in a survey, it defines the
-    conversion to planar coordinate system. Every subsequent call after
-    uses the mentioned conversion to project the measurements and create
-    X and Y values, and also uses the immediately previous measurement to
-    estimate heading and velocity
-    The elevation has been temporarily hard-coded, but it should be made
-    adjustable as a setting
+    Project the measurements to planar coordinates and use the immediately previous
+    measurement to estimate heading and velocity
     The reported X and Y values are of the vehicle defined as the middle
     point of the toolbar that holds the sensors
     """

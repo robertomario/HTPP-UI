@@ -23,6 +23,8 @@ from .camera_handler import CameraFrame
 # u >> Ultrasonic
 # g >> GPS
 # e >> Environmental
+# The order needs to match that of the functions in src/sensors.py
+# Cameras are not listed here because they are handled by a differently
 variables = {
     "m": [
         "CI",
@@ -61,6 +63,7 @@ class MainWindow(wx.Frame):
             a key-value system similar to dictionaries
         btn_test (wx.ToggleButton): Button to toggle in and out of 'Test Mode'
         logText (wx.TextCtrl): Control where information is logged
+        camera_frame (CameraFrame): Secondary frame to display video from cameras
         mapAxes (matplotlib.Axes): Axes to create map plot
         mapPanel (Plot): Panel containing the Figure where the map is drawn
         rt (RepeatedTimer): Object to create a new thread on timer periodically
@@ -78,20 +81,11 @@ class MainWindow(wx.Frame):
         lastRecord (list): List showing positions in the text log where each
             set of measurements ends. Used to erase the last set of values from
             the log text
-        origin_longitude (float): Stores value of the first GPS reading to use
-            for conversion to planar coordinates
-        origin_latitude (float): Stores value of the first GPS reading to use
-            for conversion to planar coordinates
-        F_lon (float): Stores value of the first GPS reading to use for
-            conversion to planar coordinates
-        F_lat (float): Stores value of the first GPS reading to use for
-            conversion to planar coordinates
-        origin_time (float): Stores value of the first GPS reading to use for
-            conversion to calculation of velocity
+        GPS_constants (lists): Stores values to use for conversion to planar
+            coordinates. [origin_time, origin_longitude, origin_latitude, F_lon, F_lat]
         numReadings (int): Stores how many sets of measurements have been taken
             in the current survey. Set back to 0 when log text is cleared or
             exported to file
-
     """
 
     def __init__(self, *args, **kwargs):
@@ -235,11 +229,7 @@ class MainWindow(wx.Frame):
 
     def OnSave(self, e):
         """ Toolbar option to save and reset log """
-        rootName = (
-            "data/HTPPLogFile"
-            + datetime.fromtimestamp(time.time()).strftime("%Y-%m-%d")
-            + "X"
-        )
+        rootName = "data/HTPPLogFile" + datetime.now().strftime("%Y-%m-%d") + "X"
         i = 1
         while os.path.isfile(rootName + str(i) + ".txt"):
             i += 1
@@ -260,9 +250,11 @@ class MainWindow(wx.Frame):
         self.Close()
 
     def OnCamera(self, e):
+        """ Show or hide camera frame depeding on checkable menu item """
         self.camera_frame.Show(self.camerami.IsChecked())
 
     def OnCameraClose(self, e):
+        """ Safely close camera frame """
         self.camerami.Check(False)
         self.camera_frame.close()
         self.camera_frame = CameraFrame(self, self.updateCameraPorts())
@@ -350,6 +342,9 @@ class MainWindow(wx.Frame):
         Besides opening the ports to the serial devices, this method also
         populates the attribute label_to_device for later use
         It also does a first GPS reading to set the constants of processing
+        The GPS reading is repeated until it works perfectly (no None values)
+        When in 'Test Mode', it simulates a first GPS reading to compute the projection
+        constants
         """
         btn = e.GetEventObject()
         is_pressed = btn.GetValue()
@@ -513,7 +508,7 @@ class MainWindow(wx.Frame):
     def updateLog(self, someValue, label):
         """ Update log text after receiving new sensor data """
         if someValue is not None:
-            ts = datetime.fromtimestamp(time.time()).strftime("%Y-%m-%d %H:%M:%S")
+            ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             value_text = []
             for value in someValue:
                 value_text.append(str(np.round(value, 4)))
@@ -726,6 +721,7 @@ class MainWindow(wx.Frame):
         return labels
 
     def updateCameraPorts(self):
+        """ Formats camera ports as a list ready to be used as CameraFrame's input """
         camera_ports = [None, None]
         if self.cfg.ReadBool("connectedcL", False):
             try:

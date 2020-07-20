@@ -15,6 +15,7 @@ import wx
 # incorporate different numbers of that sensor without any limit other than
 # how many there are available. On the other hand, it would be unexpected to
 # have more than 2 GPS or Environmental sensors.
+# Cameras are not listed here because they are handled by a differently
 devices = {
     "m": ("Multispectral", True),
     "u": ("Ultrasonic", True),
@@ -189,6 +190,10 @@ class PortsDialog(wx.Dialog):
         return result
 
     def getCameraPorts(self, initial_number=0, final_number=10):
+        """ List camera ports names
+        
+        OpenCV doesn't receive a COM3 type of port, but a number
+        """
         available_ports = []
         for i in range(initial_number, final_number):
             try:

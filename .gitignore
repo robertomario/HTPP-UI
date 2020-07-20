@@ -8,5 +8,4 @@ personal/
 */__pycache__/
 __pycache__/
 .venv/
-data/HTPPLogFile*
-data/*.mp4
+data/HTPP*

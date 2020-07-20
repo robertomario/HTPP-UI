@@ -2,7 +2,7 @@ numpy
 opencv-python
 black
 pylama
-wx
+wxPython
 serial
 matplotlib
 pynmea2

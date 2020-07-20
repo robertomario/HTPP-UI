@@ -1,5 +1,10 @@
+""" Define how to use cameras """
+
+# Author: Roberto Buelvas
+
 from datetime import datetime
 import threading
+import os
 
 import numpy as np
 import cv2
@@ -7,7 +12,24 @@ import wx
 
 
 class CameraHandler:
+    """ Class to use cameras
+
+    This class follows the structure of OpenCV examples
+
+    Attr:
+        label (str): Label of the format cL or cR
+        width (int): Width in pixels of pictures taken by camera
+        height (int): Heigt in pixels of pictures taken by camera
+        fps (float): Frames per second taken by camera
+        is_recording (boolean): Flag to indicate if current frame should be stored as
+            video file. If False, the video is just displayed
+        cap (cv2.VideoCapture): Device that actually reads the video
+        out (cv2.VideoWriter): Object that saves frames into video file
+        camera_thread (threading.Thread): Creates new thread to focus on cameras only
+    """
+
     def __init__(self, label, width=640, height=480, fps=15):
+        """ Initialize constant attributes """
         self.label = label
         self.width = width
         self.height = height
@@ -16,23 +38,38 @@ class CameraHandler:
         self.reset()
 
     def connect(self, camera_index):
-        name = (
-            "data/HTPP" + datetime.now().strftime("%Y-%m-%d") + self.label[1] + ".mp4"
-        )
+        """ Define cap and out attributes """
+        root_name = "data/HTPP" + datetime.now().strftime("%Y-%m-%d") + self.label[1]
+        i = 1
+        while os.path.isfile(root_name + str(i) + ".mp4"):
+            i += 1
+        final_name = root_name + str(i) + ".mp4"
         self.cap = cv2.VideoCapture(camera_index, cv2.CAP_DSHOW)
         self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, self.width)
         self.cap.set(cv2.CAP_PROP_FRAME_HEIGHT, self.height)
         self.cap.set(cv2.CAP_PROP_FPS, self.fps)
         fourcc = cv2.VideoWriter_fourcc(*"mp4v")
-        self.out = cv2.VideoWriter(name, fourcc, self.fps, (self.width, self.height))
+        self.out = cv2.VideoWriter(
+            final_name, fourcc, self.fps, (self.width, self.height)
+        )
 
     def startRecording(self, new_thread=False):
+        """ 
+        If new_thread is True, create a new thread (assuming a previous one doesn't
+        exist already) and start its operation. If False, just set is_recording flag to
+        True 
+        """
         self.is_recording = True
         if new_thread and self.camera_thread is None:
             self.camera_thread = threading.Thread(target=self.preview, daemon=True)
             self.camera_thread.start()
 
     def preview(self):
+        """ Use cv2.imshow() to display video from cameras
+        
+        When is_recording is True, store video as video file. Add timestamp to it.
+        Used for debugging
+        """
         while self.cap.isOpened():
             ret, frame = self.cap.read()
             if ret:
@@ -70,9 +107,11 @@ class CameraHandler:
                 break
 
     def stopRecording(self):
+        """ Video is no longer saved in file, but it is still displayed """
         self.is_recording = False
 
     def disconnect(self):
+        """ Release and destroy cap, out and camera_thread attributes """
         self.stopRecording()
         if self.cap is not None:
             self.cap.release()
@@ -83,29 +122,37 @@ class CameraHandler:
             self.camera_thread.join()
         self.reset()
 
-    def getSize(self):
-        return self.width, self.height
-
     def reset(self):
+        """ Set attributes to None to be ready to redefine them """
         self.cap = None
         self.out = None
         self.camera_thread = None
 
 
 class CameraPanel(wx.Panel):
+    """ Embed CameraHandler object into a wx.Panel
+    
+    Attr:
+        camera (CameraHandler): Camera object to embed
+        timer (wx.Timer): Used to update frames periodically
+        bmp (wx.Bitmap): Actual image displayed on panel
+    """
+
     def __init__(self, parent, label):
-        # Initialize panel
+        """ Initialize attributes """
         wx.Panel.__init__(self, parent)
-        # Attach CameraHandler
         self.camera = CameraHandler(label)
-        # Bind event handlers
         self.timer = wx.Timer(self)
         self.Bind(wx.EVT_PAINT, self.OnPaint)
         self.Bind(wx.EVT_TIMER, self.NextFrame)
-        # Define other attributes
         self.bmp = None
 
     def connect(self, camera_index):
+        """ Connect camera handler
+        
+        Get a first frame and populate bmp based on it
+        Start timer
+        """
         self.camera.connect(camera_index)
         ret, frame = self.camera.cap.read()
         frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
@@ -114,25 +161,27 @@ class CameraPanel(wx.Panel):
         self.timer.Start(1000.0 / self.camera.fps)
 
     def disconnect(self):
+        """ Stop video """
         self.timer.Stop()
         self.camera.disconnect()
         self.bmp = None
 
     def pauseRecording(self):
+        """ Video is no longer saved as video file, but it is still displayed """
         self.camera.stopRecording()
 
     def resumeRecording(self):
+        """ (Re)starts saving video as file """
         self.camera.startRecording()
 
-    def getCapSize(self):
-        return self.camera.getSize()
-
     def OnPaint(self, event):
+        """ Responds to Refresh() by updating bmp """
         dc = wx.BufferedPaintDC(self)
         if self.bmp is not None:
             dc.DrawBitmap(self.bmp, 0, 0)
 
     def NextFrame(self, event):
+        """ Responds to timer by getting next frame """
         if self.camera.cap.isOpened():
             ret, frame = self.camera.cap.read()
             if ret:
@@ -169,7 +218,21 @@ class CameraPanel(wx.Panel):
 
 
 class CameraFrame(wx.Frame):
+    """ Combine 2 CameraPanel side by side for left and right camera
+    
+    Add 2 ToggleButton for connect/disconnect and record/pause
+    Attr:
+        camera_ports (list): List of length 2 to indicate which camera to use for which
+            side. If any side doesn't have any camera, use None
+        camL (CameraPanel): Panel showing video from left camera
+        camR (CameraPanel): Panel showing video from right camera
+    """
+
     def __init__(self, parent, camera_ports):
+        """ Define attributes
+        
+        Destroy itself if no camera ports are available
+        """
         wx.Frame.__init__(self, parent=parent, title="Camera frame")
         if (camera_ports[0] is not None) or (camera_ports[1] is not None):
             self.camera_ports = camera_ports
@@ -183,6 +246,7 @@ class CameraFrame(wx.Frame):
             self.DestroyLater()
 
     def InitUI(self, parent):
+        """ Populate frame with elements """
         mainPanel = wx.Panel(self)
         outerBox = wx.BoxSizer(wx.VERTICAL)
         upBox = wx.BoxSizer(wx.HORIZONTAL)
@@ -226,6 +290,7 @@ class CameraFrame(wx.Frame):
         self.Center()
 
     def OnConnect(self, event):
+        """ Define response to connect/disconnect toggle button """
         btn = event.GetEventObject()
         is_pressed = btn.GetValue()
         if is_pressed:
@@ -242,6 +307,7 @@ class CameraFrame(wx.Frame):
                 self.camR.disconnect()
 
     def OnResume(self, event):
+        """ Define response to resume/pause toggle button """
         btn = event.GetEventObject()
         is_pressed = btn.GetValue()
         if is_pressed:
@@ -258,6 +324,7 @@ class CameraFrame(wx.Frame):
                 self.camR.pauseRecording()
 
     def close(self):
+        """ Safely close frame by disconnecting from cameras first """
         if self.camL is not None:
             self.camL.pauseRecording()
             self.camL.disconnect()
@@ -267,6 +334,7 @@ class CameraFrame(wx.Frame):
         self.Destroy()
 
 
+# For debugging
 if __name__ == "__main__":
     app = wx.App()
     frame = CameraFrame(None, [0, 1])
