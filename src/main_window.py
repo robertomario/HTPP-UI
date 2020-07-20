@@ -11,18 +11,20 @@ import os
 import numpy as np
 import wx
 
+from .sensors import openPort, getSensorReading, setupGPSProjection, processGPS
+from .ports_dialog import PortsDialog, devices
 from .plot_notebook import Plot, PlotNotebook
 from .repeated_timer import RepeatedTimer
 from .layout_dialog import LayoutDialog
-from .ports_dialog import PortsDialog, devices
-from .sensors import openPort, getSensorReading
-
+from .camera_handler import CameraFrame
 
 # Dict to hold which sensor is the source for each measured variable
 # m >> Multispectral
 # u >> Ultrasonic
 # g >> GPS
 # e >> Environmental
+# The order needs to match that of the functions in src/sensors.py
+# Cameras are not listed here because they are handled by a differently
 variables = {
     "m": [
         "CI",
@@ -36,7 +38,7 @@ variables = {
         "Red",
     ],
     "u": ["Distance"],
-    "g": ["Latitude", "Longitude", "X", "Y", "Heading", "Velocity", "Time"],
+    "g": ["Longitude", "Latitude", "X", "Y", "Heading", "Velocity", "Time"],
     "e": [
         "Canopy Temperature",
         "Air Temperature",
@@ -61,6 +63,7 @@ class MainWindow(wx.Frame):
             a key-value system similar to dictionaries
         btn_test (wx.ToggleButton): Button to toggle in and out of 'Test Mode'
         logText (wx.TextCtrl): Control where information is logged
+        camera_frame (CameraFrame): Secondary frame to display video from cameras
         mapAxes (matplotlib.Axes): Axes to create map plot
         mapPanel (Plot): Panel containing the Figure where the map is drawn
         rt (RepeatedTimer): Object to create a new thread on timer periodically
@@ -78,20 +81,11 @@ class MainWindow(wx.Frame):
         lastRecord (list): List showing positions in the text log where each
             set of measurements ends. Used to erase the last set of values from
             the log text
-        origin_longitude (float): Stores value of the first GPS reading to use
-            for conversion to planar coordinates
-        origin_latitude (float): Stores value of the first GPS reading to use
-            for conversion to planar coordinates
-        F_lon (float): Stores value of the first GPS reading to use for
-            conversion to planar coordinates
-        F_lat (float): Stores value of the first GPS reading to use for
-            conversion to planar coordinates
-        origin_time (float): Stores value of the first GPS reading to use for
-            conversion to calculation of velocity
+        GPS_constants (lists): Stores values to use for conversion to planar
+            coordinates. [origin_time, origin_longitude, origin_latitude, F_lon, F_lat]
         numReadings (int): Stores how many sets of measurements have been taken
             in the current survey. Set back to 0 when log text is cleared or
             exported to file
-
     """
 
     def __init__(self, *args, **kwargs):
@@ -99,6 +93,8 @@ class MainWindow(wx.Frame):
         super(MainWindow, self).__init__(*args, **kwargs)
         self.cfg = wx.Config("HTPPconfig")
         self.cfg.WriteBool("notEmpty", True)
+        self.camera_frame = CameraFrame(self, self.updateCameraPorts())
+        self.camera_frame.Bind(wx.EVT_CLOSE, self.OnCameraClose)
         self.labels = []
         self.axes = {}
         self.label_to_device = {}
@@ -134,6 +130,11 @@ class MainWindow(wx.Frame):
         settingsMenu.Append(clearmi)
         self.Bind(wx.EVT_MENU, self.OnClear, clearmi)
         menubar.Append(settingsMenu, "&Settings")
+
+        viewMenu = wx.Menu()
+        self.camerami = viewMenu.AppendCheckItem(wx.ID_ANY, "&Camera")
+        self.Bind(wx.EVT_MENU, self.OnCamera, self.camerami)
+        menubar.Append(viewMenu, "&View")
 
         helpMenu = wx.Menu()
         aboutmi = wx.MenuItem(helpMenu, wx.ID_ABOUT, "&About")
@@ -219,7 +220,8 @@ class MainWindow(wx.Frame):
             self.logText.SetValue("")
             self.logSettings()
             self.plotter.clear()
-            self.plotter.redoLegend()
+            num_sensors = self.cfg.ReadInt("numSensors", 1)
+            self.plotter.redoLegend(variables, devices, num_sensors)
             self.plotter.refresh()
             self.mapPanel.clear()
             self.mapPanel.refresh()
@@ -227,11 +229,7 @@ class MainWindow(wx.Frame):
 
     def OnSave(self, e):
         """ Toolbar option to save and reset log """
-        rootName = (
-            "data/HTPPLogFile"
-            + datetime.fromtimestamp(time.time()).strftime("%Y-%m-%d")
-            + "X"
-        )
+        rootName = "data/HTPPLogFile" + datetime.now().strftime("%Y-%m-%d") + "X"
         i = 1
         while os.path.isfile(rootName + str(i) + ".txt"):
             i += 1
@@ -240,7 +238,8 @@ class MainWindow(wx.Frame):
         self.logText.SetValue("")
         self.logSettings()
         self.plotter.clear()
-        self.plotter.redoLegend()
+        num_sensors = self.cfg.ReadInt("numSensors", 1)
+        self.plotter.redoLegend(variables, devices, num_sensors)
         self.plotter.refresh()
         self.mapPanel.clear()
         self.mapPanel.refresh()
@@ -249,6 +248,17 @@ class MainWindow(wx.Frame):
     def OnQuit(self, e):
         """ Toolbar option to exit application """
         self.Close()
+
+    def OnCamera(self, e):
+        """ Show or hide camera frame depeding on checkable menu item """
+        self.camera_frame.Show(self.camerami.IsChecked())
+
+    def OnCameraClose(self, e):
+        """ Safely close camera frame """
+        self.camerami.Check(False)
+        self.camera_frame.close()
+        self.camera_frame = CameraFrame(self, self.updateCameraPorts())
+        self.camera_frame.Hide()
 
     def OnAbout(self, e):
         """ Toolbar option to show About dialog """
@@ -279,6 +289,9 @@ class MainWindow(wx.Frame):
             self.logSettings()
             self.labels = self.getLabels()
             self.plotter.redoLegend(variables, devices, num_sensors)
+            self.camera_frame.close()
+            self.camera_frame = CameraFrame(self, self.updateCameraPorts())
+            self.camera_frame.Show(self.camerami.IsChecked())
         pDialog.Destroy()
 
     def OnLayout(self, e):
@@ -329,50 +342,53 @@ class MainWindow(wx.Frame):
         Besides opening the ports to the serial devices, this method also
         populates the attribute label_to_device for later use
         It also does a first GPS reading to set the constants of processing
+        The GPS reading is repeated until it works perfectly (no None values)
+        When in 'Test Mode', it simulates a first GPS reading to compute the projection
+        constants
         """
         btn = e.GetEventObject()
         is_pressed = btn.GetValue()
-        if is_pressed:
-            btn.SetLabelText("Disconnect")
-            self.label_to_device = {}
-            for label in self.labels:
-                if self.cfg.ReadBool("connected" + label, False):
-                    port = self.cfg.Read("port" + label)
-                    if port == "":
-                        wx.MessageBox(
-                            (
-                                "The port for "
-                                + label
-                                + "has not been properly selected"
-                            ),
-                            "Empty port",
-                            wx.OK | wx.ICON_WARNING,
-                        )
-                        break
-                    else:
-                        device = openPort(port, label)
-                        self.label_to_device[label] = device
-                        if label[0] == "g":
-                            reading = np.array([np.nan, np.nan])
-                            while any(np.isnan(reading)):
-                                reading = getSensorReading(device, label)
-                            self.origin_time = time.time()
-                            self.origin_latitude = math.pi * reading[1] / 180
-                            self.origin_longitude = math.pi * reading[0] / 180
-                            a = 6378137  # Earth's semimajor axis
-                            b = 6356752.3142  # Earth's semiminor axis
-                            h = 20  # Current elevation over sea level
-                            c = math.sqrt(
-                                (a * math.cos(self.origin_latitude)) ** 2
-                                + (b * math.sin(self.origin_latitude)) ** 2
-                            )
-                            self.F_lon = math.cos(self.origin_latitude) * (
-                                (a ** 2 / c) + h
-                            )
-                            self.F_lat = ((a * b) ** 2 / c ** 3) + h
+        is_test_mode = self.btn_test.GetValue()
+        if is_test_mode:
+            if is_pressed:
+                btn.SetLabelText("Disconnect")
+                for label in self.labels:
+                    if (label[0] == "g") and self.cfg.ReadBool(
+                        "connected" + label, False
+                    ):
+                        reading = [-73.939830, 45.423804]
+                        self.GPS_constants = setupGPSProjection(reading)
+            else:
+                btn.SetLabelText("Connect")
         else:
-            btn.SetLabelText("Connect")
-            self.disconnect()
+            if is_pressed:
+                btn.SetLabelText("Disconnect")
+                self.label_to_device = {}
+                for label in self.labels:
+                    if self.cfg.ReadBool("connected" + label, False):
+                        port = self.cfg.Read("port" + label, "")
+                        if port == "":
+                            wx.MessageBox(
+                                (
+                                    "The port for "
+                                    + label
+                                    + "has not been properly selected"
+                                ),
+                                "Empty port",
+                                wx.OK | wx.ICON_WARNING,
+                            )
+                            break
+                        else:
+                            device = openPort(port, label)
+                            self.label_to_device[label] = device
+                            if label[0] == "g":
+                                reading = np.array([np.nan, np.nan])
+                                while any(np.isnan(reading)):
+                                    reading = getSensorReading(device, label)
+                                self.GPS_constants = setupGPSProjection(reading)
+            else:
+                btn.SetLabelText("Connect")
+                self.disconnect()
 
     def OnStart(self, e):
         """ Button action to take measurements periodically
@@ -439,7 +455,7 @@ class MainWindow(wx.Frame):
                     reading = []
                     for i in range(len(variables[label[0]])):
                         reading.append(random.random())
-                self.updateUI(reading, label)
+                self.updateUI(np.array(reading), label)
         self.plotter.refresh()
         self.numReadings += 1
 
@@ -466,17 +482,33 @@ class MainWindow(wx.Frame):
         This is a general method that calls the more specific ones if necessary
         """
         if label[0] == "g":
-            values = self.processGPS(someValue, label)
-            self.updateMap(values, label)
+            values = processGPS(
+                someValue,
+                label,
+                self.GPS_constants,
+                self.numReadings,
+                self.previous_measurements,
+                self.cfg,
+            )
+            if values is None:
+                wx.MessageBox(
+                    ("The dimensions in Layout have not been " + "properly set"),
+                    "Empty port",
+                    wx.OK | wx.ICON_WARNING,
+                )
+            else:
+                self.updateMap(values, label)
+                self.updateLog(values, label)
+                self.updatePlot(values, label)
         else:
             values = someValue
-        self.updateLog(values, label)
-        self.updatePlot(values, label)
+            self.updateLog(values, label)
+            self.updatePlot(values, label)
 
     def updateLog(self, someValue, label):
         """ Update log text after receiving new sensor data """
         if someValue is not None:
-            ts = datetime.fromtimestamp(time.time()).strftime("%Y-%m-%d %H:%M:%S")
+            ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             value_text = []
             for value in someValue:
                 value_text.append(str(np.round(value, 4)))
@@ -588,7 +620,7 @@ class MainWindow(wx.Frame):
         at least two measurements are required to compute the heading, which
         in turn is required to know how to orient the sensor markers
         """
-        if (self.numReadings > 0) and not any(np.isnan(someValue[2:5])):
+        if (self.numReadings > 0) and (not any(np.isnan(someValue[2:5]))):
             vehicle_x = someValue[2]
             vehicle_y = someValue[3]
             heading_radians = math.pi * someValue[4] / 180
@@ -645,77 +677,6 @@ class MainWindow(wx.Frame):
                     )
             self.mapPanel.refresh()
 
-    def processGPS(self, someValue, label):
-        """ Estimates heading and velocity from GPS readings
-
-        The first time this method is called in a survey, it defines the
-        conversion to planar coordinate system. Every subsequent call after
-        uses the mentioned conversion to project the measurements and create
-        X and Y values, and also uses the immediately previous measurement to
-        estimate heading and velocity
-        The elevation has been temporarily hard-coded, but it should be made
-        adjustable as a setting
-        The reported X and Y values are of the vehicle defined as the middle
-        point of the toolbar that holds the sensors
-        """
-        new_longitude = math.pi * someValue[0] / 180
-        new_latitude = math.pi * someValue[1] / 180
-        new_time = time.time() - self.origin_time
-        gps_x = (new_longitude - self.origin_longitude) * self.F_lon
-        gps_y = (new_latitude - self.origin_latitude) * self.F_lat
-        old_time = self.previous_measurements[label + "/Time"]
-        old_x = self.previous_measurements[label + "/X"]
-        old_y = self.previous_measurements[label + "/Y"]
-        heading_radians = math.atan2(gps_y - old_y, gps_x - old_x)
-        velocity = math.sqrt((gps_x - old_x) ** 2 + (gps_y - old_y) ** 2) / (
-            new_time - old_time
-        )
-        heading = 180 * heading_radians / math.pi
-        if (label[1] == "L") and self.cfg.HasEntry("DGLX"):
-            dgx = self.cfg.ReadFloat("DGLX") / 100
-            dgy = self.cfg.ReadFloat("DGLY") / 100
-            vehicle_x = (
-                gps_x
-                + dgx * math.sin(heading_radians)
-                - dgy * math.cos(heading_radians)
-            )
-            vehicle_y = (
-                gps_y
-                - dgx * math.cos(heading_radians)
-                - dgy * math.sin(heading_radians)
-            )
-        elif (label[1] == "R") and self.cfg.HasEntry("DGRX"):
-            dgx = self.cfg.ReadFloat("DGRX") / 100
-            dgy = self.cfg.ReadFloat("DGRY") / 100
-            vehicle_x = (
-                gps_x
-                - dgx * math.sin(heading_radians)
-                - dgy * math.cos(heading_radians)
-            )
-            vehicle_y = (
-                gps_y
-                + dgx * math.cos(heading_radians)
-                - dgy * math.sin(heading_radians)
-            )
-        else:
-            wx.MessageBox(
-                ("The dimensions in Layout have not been " + "properly set"),
-                "Empty port",
-                wx.OK | wx.ICON_WARNING,
-            )
-            return 0
-        return np.array(
-            [
-                someValue[0],
-                someValue[1],
-                vehicle_x,
-                vehicle_y,
-                heading,
-                velocity,
-                new_time,
-            ]
-        )
-
     def logSettings(self):
         """ Append settings to log """
         self.logText.AppendText("**************Settings-Start**************\n")
@@ -759,6 +720,21 @@ class MainWindow(wx.Frame):
                 labels.append(initial + "R")
         return labels
 
+    def updateCameraPorts(self):
+        """ Formats camera ports as a list ready to be used as CameraFrame's input """
+        camera_ports = [None, None]
+        if self.cfg.ReadBool("connectedcL", False):
+            try:
+                camera_ports[0] = int(self.cfg.Read("portcL", ""))
+            except Exception as e:
+                pass
+        if self.cfg.ReadBool("connectedcR", False):
+            try:
+                camera_ports[1] = int(self.cfg.Read("portcR", ""))
+            except Exception as e:
+                pass
+        return camera_ports
+
     def disconnect(self):
         """ Disconnect from all serial sensors """
         all_devices = list(self.label_to_device.values())
@@ -772,8 +748,4 @@ class MainWindow(wx.Frame):
         self.numReadings = 0
         self.lastRecord = [0]
         self.previous_measurements = {}
-        self.origin_longitude = 180
-        self.origin_latitude = 90
-        self.F_lon = 0
-        self.F_lat = 0
-        self.origin_time = 0
+        self.GPS_constants = [0, 180, 90, 0, 0]

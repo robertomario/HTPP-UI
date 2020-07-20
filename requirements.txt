@@ -1,0 +1,8 @@
+numpy
+opencv-python
+black
+pylama
+wxPython
+serial
+matplotlib
+pynmea2
