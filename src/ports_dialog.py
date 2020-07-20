@@ -68,7 +68,7 @@ class PortsDialog(wx.Dialog):
         self.spinCtrl.Bind(wx.EVT_TEXT, self.OnNumberChange)
         hbox0.Add(self.spinCtrl, proportion=0, flag=wx.ALL)
 
-        vbox1.Add(hbox0, proportion=1, border=10, flag=wx.TOP | wx.BOTTOM | wx.EXPAND)
+        vbox1.Add(hbox0, proportion=0, border=10, flag=wx.TOP | wx.BOTTOM)
 
         device_tuples = list(devices.values())
         self.checkbox_to_combobox = {}
@@ -92,7 +92,7 @@ class PortsDialog(wx.Dialog):
                 self.addCheckComboBoxes(vbox_aux, pnl, ports, name, "L")
                 self.addCheckComboBoxes(vbox_aux, pnl, ports, name, "R")
             vbox1.Add(
-                vbox_aux, proportion=1, border=10, flag=wx.TOP | wx.BOTTOM | wx.EXPAND
+                vbox_aux, proportion=0, border=10, flag=wx.TOP | wx.BOTTOM | wx.EXPAND
             )
         vbox_aux = wx.BoxSizer(wx.VERTICAL)
         st_aux = wx.StaticText(pnl, label="Camera", size=(120, 30))
@@ -234,7 +234,7 @@ class PortsDialog(wx.Dialog):
         else:
             suffix = name[0].lower() + side + str(number)
         chb_aux = wx.CheckBox(pnl, label=suffix)
-        hbox_aux.Add(chb_aux, proportion=1, flag=wx.ALL | wx.EXPAND)
+        hbox_aux.Add(chb_aux, proportion=1, flag=wx.ALL, border=2)
         chb_aux.Bind(wx.EVT_CHECKBOX, self.OnChecked)
         cb_aux = wx.ComboBox(pnl, choices=comboOptions)
         self.checkbox_to_combobox[chb_aux] = cb_aux
@@ -246,5 +246,5 @@ class PortsDialog(wx.Dialog):
         else:
             cb_aux.SetValue("")
             cb_aux.Enable(False)
-        hbox_aux.Add(cb_aux, proportion=1, flag=wx.ALL | wx.EXPAND)
+        hbox_aux.Add(cb_aux, proportion=1, flag=wx.ALL, border=2)
         boxSizer.Add(hbox_aux, proportion=1, flag=wx.EXPAND)
