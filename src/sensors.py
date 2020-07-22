@@ -2,6 +2,7 @@
 
 # Author: Roberto Buelvas
 
+from threading import Thread
 import math
 import time
 
@@ -10,10 +11,79 @@ import pynmea2
 import serial
 
 
-def openPort(port, label):
+targets = {
+    "m": getMultispectralReading,
+    "u": getUltrasonicReading,
+    "g": getGPSReading,
+    "e": getEnvironmentalReading,
+}
+
+
+class SerialSensor:
+    def __init__(self, port, label, baudrate=38400):
+        self.port = port
+        self.label = label
+        self.target = targets[label[0]]
+        self.baudrate = baudrate
+        self.device = None
+        self.thread = None
+        self.is_connected = False
+
+    def openPort(self):
+        """ 
+        Returns True or False depending if it succeeds
+        """
+        try:
+            self.device = serial.Serial(self.port, self.baudrate)
+            self.thread = Thread(target=self.target, daemon=False)
+        except Exception as e:
+            return False
+        else:
+            self.is_connected = True
+            return True
+
+    def closePort(self):
+        """ 
+        Assumed to always succeed. What could go wrong?
+        """
+        if self.thread is not None:
+            self.thread.join()
+            self.thread = None
+        if self.device in not None:
+            self.device.close()
+            self.device =None
+        self.is_connected = False
+
+class SerialHandler:
+    def __init__(self):
+        self.sensors = []
+
+    def openAllPorts(self):
+        for i, sensor in enumerate(self.sensors):
+            is_working = sensor.openPort()
+            if not is_working:
+                break
+        # This condition would only be True if is_working was True for all devices
+        if self.sensors[-1].is_connected:
+            return True
+        else:
+            for j in range(i):
+                self.sensors[j].closePort()
+            return False
+    
+    def addSerialSensor(self, port, label):
+        self.sensors.append(SerialSensor(port, label))
+
+    def startAllSensors(self):
+
+
+
+
+
+def openPort(port, label, baudrate):
     """ Utility function to connect to serial device """
-    baudrate = 38400
     device = serial.Serial(port, baudrate)
+    device_thread = Thread(target=updateSensor, name=label, args=(label,), daemon=False)
     return device
 
 
