@@ -33,6 +33,7 @@ def getSensorReading(device_port, label, is_device_ready=True):
         reading (list): Output from one of the get{X}Reading() functions
     """
     if is_device_ready:
+        device_port.reset_input_buffer()
         if label[0] == "m":
             return getMultispectralReading(device_port)
         if label[0] == "u":
