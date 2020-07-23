@@ -190,6 +190,7 @@ def getGPSReading(device, numValues=2):
                     values[count, 1] = parsedMessage.latitude
         except Exception as e:
             pass
+    # Sometimes "Mean of empty slice" error happens
     finalMeasurement = np.nanmean(values, axis=0)
     return finalMeasurement
 
