@@ -23,61 +23,92 @@ class SerialSensor:
     def __init__(self, port, label, baudrate=38400):
         self.port = port
         self.label = label
-        self.target = targets[label[0]]
+        self.read_function = targets[label[0]]
         self.baudrate = baudrate
+        self.value = None
         self.device = None
         self.thread = None
         self.is_connected = False
+        self.end_flag = True
 
-    def openPort(self):
+    def open(self):
         """ 
         Returns True or False depending if it succeeds
         """
-        try:
-            self.device = serial.Serial(self.port, self.baudrate)
-            self.thread = Thread(target=self.target, daemon=False)
-        except Exception as e:
-            return False
-        else:
-            self.is_connected = True
-            return True
+        if not self.is_connected:
+            try:
+                self.device = serial.Serial(self.port, self.baudrate, timeout=1)
+                self.end_flag = False
+                self.thread = Thread(target=self.update, name=label, daemon=False)
+            except Exception as e:
+                self.device = None
+                self.thread = None
+                return False
+            else:
+                self.is_connected = True
+                return True
 
-    def closePort(self):
+    def close(self):
         """ 
         Assumed to always succeed. What could go wrong?
         """
-        if self.thread is not None:
-            self.thread.join()
-            self.thread = None
-        if self.device in not None:
-            self.device.close()
-            self.device =None
-        self.is_connected = False
+        if self.is_connected:
+            self.end_flag = True
+            if self.thread is not None:
+                if self.thread.is_alive():
+                    self.thread.join()
+                self.thread = None
+            if self.device is not None:
+                if self.device.is_open:
+                    self.device.close()
+                self.device = None
+            self.is_connected = False
+
+    def read(self):
+        if self.is_connected:
+            return self.value
+        else:
+            return None
+
+    def update(self):
+        while not self.end_flag:
+            self.value = self.read_function(self.device)
+
 
 class SerialHandler:
     def __init__(self):
-        self.sensors = []
+        self.sensors = {}
+
+    def addSerialSensor(self, port, label):
+        new_sensor = SerialSensor(port, label)
+        self.sensors[label] = new_sensor
 
     def openAllPorts(self):
-        for i, sensor in enumerate(self.sensors):
-            is_working = sensor.openPort()
-            if not is_working:
+        labels = list(self.sensors.keys())
+        for i, label in enumerate(labels):
+            success = self.sensors[label].open()
+            if not success:
                 break
         # This condition would only be True if is_working was True for all devices
-        if self.sensors[-1].is_connected:
+        if self.sensors[labels[-1]].is_connected:
             return True
         else:
             for j in range(i):
-                self.sensors[j].closePort()
+                self.sensors[labels[j]].close()
             return False
-    
-    def addSerialSensor(self, port, label):
-        self.sensors.append(SerialSensor(port, label))
 
-    def startAllSensors(self):
+    def closeAllPorts(self):
+        for sensor in self.sensors.values():
+            sensor.close()
 
+    def readSensor(self, label):
+        return self.sensors[label].read()
 
-
+    def readAllSensor(self):
+        output = {}
+        for label, sensor in self.sensors.items():
+            output[label] = sensor.read()
+        return output
 
 
 def openPort(port, label, baudrate):
@@ -467,9 +498,7 @@ def setupGPSProjection(reading):
     return [origin_time, origin_longitude, origin_latitude, F_lon, F_lat]
 
 
-def processGPS(
-    someValue, label, GPS_constants, num_readings, previous_measurements, cfg
-):
+def processGPS(someValue, label, GPS_constants, num_readings, previous_measurements, cfg):
     """ Estimates heading and velocity from GPS readings
 
     Project the measurements to planar coordinates and use the immediately previous
