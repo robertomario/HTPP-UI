@@ -142,9 +142,9 @@ class CameraPanel(wx.Panel):
         """ Initialize attributes """
         wx.Panel.__init__(self, parent)
         self.camera = CameraHandler(label)
-        self.timer = wx.Timer(self, wx.NewID())
+        self.timer = wx.Timer(self, wx.Window.NewControlId())
         self.Bind(wx.EVT_PAINT, self.OnPaint)
-        self.Bind(wx.EVT_TIMER, self.timer.GetID(), self.NextFrame)
+        self.Bind(wx.EVT_TIMER, self.NextFrame, id=self.timer.GetId())
         self.bmp = None
 
     def connect(self, camera_index):

@@ -112,8 +112,8 @@ class MainWindow(wx.Frame):
         self.axes = {}
         self.label_to_device = {}
         self.clearVariables()
-        self.timer = wx.Timer(self, wx.NewID())
-        self.Bind(wx.EVT_TIMER, self.timer.GetID(), self.OnTimer)
+        self.timer = wx.Timer(self, wx.Window.NewControlId())
+        self.Bind(wx.EVT_TIMER, self.OnTimer, id=self.timer.GetId())
         self.initUI()
 
     def initUI(self):
