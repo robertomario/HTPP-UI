@@ -112,6 +112,8 @@ class MainWindow(wx.Frame):
         self.axes = {}
         self.label_to_device = {}
         self.clearVariables()
+        self.timer = wx.Timer(self, wx.Window.NewControlId())
+        self.Bind(wx.EVT_TIMER, self.OnTimer, id=self.timer.GetId())
         self.initUI()
 
     def initUI(self):
@@ -351,6 +353,17 @@ class MainWindow(wx.Frame):
             for key in all_config_keys:
                 self.cfg.DeleteEntry(key)
 
+    def OnTimer(self, e):
+        """ Function to be performed periodically as response to EVT_TIMER
+        If in 'Test Mode', instead of calling the getAllReadings() method,
+        it will call simulateSensorReadings()
+        """
+        is_test_mode = self.btn_test.GetValue()
+        if is_test_mode:
+            self.simulateSensorReadings()
+        else:
+            self.getAllReadings()
+
     def OnConnect(self, e):
         """ Toggle button action to connect/disconnect from sensors
 
@@ -414,20 +427,14 @@ class MainWindow(wx.Frame):
         When clicked for the first time, it will create a RepeatedTimer to call
         getAllReadings() every second. When clicked again, it will stop the
         timer.
-        If in 'Test Mode', instead of calling the getAllReadings() method,
-        it will call simulateSensorReadings()
         """
         btn = e.GetEventObject()
         is_pressed = btn.GetValue()
         if is_pressed:
-            is_test_mode = self.btn_test.GetValue()
-            if is_test_mode:
-                self.rt = RepeatedTimer(1, self.simulateSensorReadings)
-            else:
-                self.rt = RepeatedTimer(1, self.getAllReadings)
+            self.timer.Start(1000.0)
             btn.SetLabelText("Stop")
         else:
-            self.rt.stop()
+            self.timer.Stop()
             btn.SetLabelText("Start")
         self.btn_connect.Enable(not is_pressed)
         self.btn_measure.Enable(not is_pressed)
