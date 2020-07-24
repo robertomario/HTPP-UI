@@ -331,7 +331,7 @@ class CameraFrame(wx.Frame):
         if self.camR is not None:
             self.camR.pauseRecording()
             self.camR.disconnect()
-        self.Destroy()
+        self.DestroyLater()
 
 
 # For debugging
