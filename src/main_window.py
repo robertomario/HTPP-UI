@@ -284,6 +284,14 @@ class MainWindow(wx.Frame):
                 if setting_key[0] == "I":
                     self.cfg.WriteInt(setting_key, results.ReadInt(setting_key))
             self.logSettings()
+        # TODO
+        condition = False
+        if condition:
+            wx.MessageBox(
+                "The dimensions in Layout have not been properly set",
+                "Empty port",
+                wx.OK | wx.ICON_WARNING,
+            )
         lDialog.Destroy()
 
     def OnClear(self, e):
@@ -340,6 +348,9 @@ class MainWindow(wx.Frame):
                 success = self.sensor_handler.openAll()
                 if success:
                     btn.SetLabelText("Disconnect")
+                    self.btn_start.Enable(is_pressed)
+                    self.btn_measure.Enable(is_pressed)
+                    self.btn_test.Enable(not is_pressed)
                 else:
                     wx.MessageBox(
                         "At least one port has not been properly set up",
@@ -350,9 +361,9 @@ class MainWindow(wx.Frame):
             else:
                 self.sensor_handler.closeAll()
                 btn.SetLabelText("Connect")
-        self.btn_start.Enable(is_pressed)
-        self.btn_measure.Enable(is_pressed)
-        self.btn_test.Enable(not is_pressed)
+                self.btn_start.Enable(is_pressed)
+                self.btn_measure.Enable(is_pressed)
+                self.btn_test.Enable(not is_pressed)
 
     def OnStart(self, e):
         """ Button action to take measurements periodically
@@ -400,14 +411,8 @@ class MainWindow(wx.Frame):
                     self.updatePlot(reading, label)
         else:
             for label in self.labels:
-                reading = self.sensor_handler.read(label)
-                if reading is None:
-                    wx.MessageBox(
-                        "The dimensions in Layout have not been properly set",
-                        "Empty port",
-                        wx.OK | wx.ICON_WARNING,
-                    )
-                else:
+                reading = self.sensor_handler.read(label, self.num_readings, self.cfg)
+                if reading is not None:
                     if label == "g":
                         self.updateMap(reading, label)
                     self.updateLog(reading, label)

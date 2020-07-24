@@ -180,7 +180,7 @@ def getEnvironmentalReading(device, numValues=3):
         try:
             message = device.readline().strip().decode()
         except Exception as e:
-            print("Error in ")
+            print("Skipped error in Environmental reading")
             print(str(e))
         else:
             measurements = message.split(",")
@@ -290,14 +290,18 @@ class SerialSensor:
             try:
                 self.device = serial.Serial(self.port, self.baudrate, timeout=1)
                 self.end_flag = False
-                self.thread = Thread(target=self.update, name=label, daemon=False)
+                self.thread = Thread(target=self.update, name=self.label, daemon=False)
+                self.thread.start()
             except Exception as e:
+                print(str(e))
                 self.device = None
                 self.thread = None
                 return False
             else:
                 self.is_connected = True
                 return True
+        else:
+            return None
 
     def close(self):
         """ End communication with port and kill thread
@@ -348,7 +352,7 @@ class SensorHandler:
     def __init__(self):
         """ Define empty attributes """
         self.sensors = {}
-        self.current_measurements = {}
+        self.measurements = {}
         self.previous_measurements = {}
         self.GPS_constants = None
 
@@ -371,9 +375,12 @@ class SensorHandler:
                 if label[0] == "g":
                     self.setupGPS(label)
             except Exception as e:
+                print(label)
+                print(str(e))
                 break
             else:
                 if not success:
+                    print(label)
                     break
         # This condition would only be True if is_working was True for all devices
         if self.sensors[labels[-1]].is_connected:
@@ -403,7 +410,7 @@ class SensorHandler:
         Return:
             reading (np.ndarray): Simulated reading from sensor
         """
-        self.previous_measurements = self.current_measurements.copy()
+        self.previous_measurements = self.measurements.copy()
         if label[0] == "g":
             reading = [
                 -73.939830 + 0.0001 * num_readings,
@@ -430,10 +437,10 @@ class SensorHandler:
             for i in range(len(variables[label[0]])):
                 reading.append(random.random())
         for i, variable_name in enumerate(variables[label[0]]):
-            self.current_measurements[label + "/" + variable_name] = reading[i]
+            self.measurements[label + "/" + variable_name] = reading[i]
         return np.array(reading)
 
-    def read(self, label, num_readings, cfg):
+    def read(self, label, num_readings, cfg=None):
         """ Produces the readings of a sensor 
         
         Args:
@@ -447,20 +454,24 @@ class SensorHandler:
         Return:
             reading (np.ndarray): Reading from sensor
         """
-        self.previous_measurements = self.current_measurements.copy()
+        self.previous_measurements = self.measurements.copy()
         if label in self.sensors.keys():
             reading = self.sensors[label].read()
-            if label == "g":
-                reading = processGPS(
-                    reading,
-                    label,
-                    self.GPS_constants,
-                    self.previous_measurements,
-                    num_readings,
-                    cfg,
-                )
-            for i, variable_name in enumarate(variables[label[0]]):
-                self.current_measurements[label + "/" + variable_name] = reading[i]
+            if label[0] == "g":
+                if cfg is not None:
+                    reading = processGPS(
+                        reading,
+                        label,
+                        self.GPS_constants,
+                        self.previous_measurements,
+                        num_readings,
+                        cfg,
+                    )
+                    for i, variable_name in enumerate(variables[label[0]]):
+                        self.measurements[label + "/" + variable_name] = reading[i]
+            else:
+                for i, variable_name in enumerate(variables[label[0]]):
+                    self.measurements[label + "/" + variable_name] = reading[i]
             return reading
         else:
             return None
@@ -476,8 +487,11 @@ class SensorHandler:
             until a 'good' reading happens i.e. no NaN values
         """
         reading = np.array([np.nan, np.nan])
-        while any(np.isnan(reading)):
-            reading = self.read(label)
+        while True:
+            reading = self.read(label, 0, None)
+            if reading is not None:
+                if not any(np.isnan(reading)):
+                    break
         self.GPS_constants = setupGPSProjection(reading)
 
 
