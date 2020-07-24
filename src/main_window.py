@@ -11,53 +11,12 @@ import os
 import numpy as np
 import wx
 
-from .sensors import openPort, getSensorReading, setupGPSProjection, processGPS
+from .sensors import SensorHandler, setupGPSProjection, variables
 from .ports_dialog import PortsDialog, devices
 from .plot_notebook import Plot, PlotNotebook
 from .repeated_timer import RepeatedTimer
 from .layout_dialog import LayoutDialog
 from .camera_handler import CameraFrame
-
-# Dict to hold which sensor is the source for each measured variable
-# m >> Multispectral
-# u >> Ultrasonic
-# g >> GPS
-# e >> Environmental
-# The order needs to match that of the functions in src/sensors.py
-# Cameras are not listed here because they are handled by a differently
-variables = {
-    "m": [
-        "CI",
-        "NDRE",
-        "NDVI",
-        "proxy Distance",
-        "proxy LAI",
-        "proxy CCC",
-        "Red-Edge",
-        "NIR",
-        "Red",
-    ],
-    "u": ["Distance"],
-    "g": [
-        "Longitude",
-        "Latitude",
-        "GPS_X",
-        "GPS_Y",
-        "Vehicle_X",
-        "Vehicle_Y",
-        "Heading",
-        "Velocity",
-        "Time",
-    ],
-    "e": [
-        "Canopy Temperature",
-        "Air Temperature",
-        "Humidity",
-        "Reflected PAR",
-        "Incident PAR",
-        "Pressure",
-    ],
-}
 
 
 class MainWindow(wx.Frame):
@@ -91,12 +50,12 @@ class MainWindow(wx.Frame):
             'gR/Latitude'. Used to create the plots and process GPS data
         labels (list): List of all possible labels of the style mL1 or gR given
             the number of scaling sensors
-        lastRecord (list): List showing positions in the text log where each
+        last_record (list): List showing positions in the text log where each
             set of measurements ends. Used to erase the last set of values from
             the log text
         GPS_constants (lists): Stores values to use for conversion to planar
             coordinates. [origin_time, origin_longitude, origin_latitude, F_lon, F_lat]
-        numReadings (int): Stores how many sets of measurements have been taken
+        num_readings (int): Stores how many sets of measurements have been taken
             in the current survey. Set back to 0 when log text is cleared or
             exported to file
     """
@@ -106,15 +65,18 @@ class MainWindow(wx.Frame):
         super(MainWindow, self).__init__(*args, **kwargs)
         self.cfg = wx.Config("HTPPconfig")
         self.cfg.WriteBool("notEmpty", True)
-        self.camera_frame = CameraFrame(self, self.updateCameraPorts())
-        self.camera_frame.Bind(wx.EVT_CLOSE, self.OnCameraClose)
-        self.labels = []
+        self.labels = self.updateLabels()
         self.axes = {}
-        self.label_to_device = {}
-        self.clearVariables()
-        self.timer = wx.Timer(self, wx.Window.NewControlId())
-        self.Bind(wx.EVT_TIMER, self.OnTimer, id=self.timer.GetId())
+        self.reset()
         self.initUI()
+        self.sensor_handler = None
+        self.updateSensorHandler()
+        self.camera_frame = None
+        self.updateCameraFrame()
+        self.camera_frame.Bind(wx.EVT_CLOSE, self.OnCameraClose)
+        self.timer = wx.Timer(self, wx.Window.NewControlId())
+        self.Bind(wx.EVT_TIMER, self.OnUpdate, id=self.timer.GetId())
+        self.Bind(wx.EVT_CLOSE, self.OnClose)
 
     def initUI(self):
         """ Define window elements """
@@ -207,7 +169,7 @@ class MainWindow(wx.Frame):
         btn_erase = wx.Button(backgroundPanel, label="Erase")
         self.btn_connect.Bind(wx.EVT_TOGGLEBUTTON, self.OnConnect)
         self.btn_start.Bind(wx.EVT_TOGGLEBUTTON, self.OnStart)
-        self.btn_measure.Bind(wx.EVT_BUTTON, self.OnMeasure)
+        self.btn_measure.Bind(wx.EVT_BUTTON, self.OnUpdate)
         btn_erase.Bind(wx.EVT_BUTTON, self.OnErase)
         rightBox.Add(self.btn_connect, proportion=1, flag=wx.EXPAND | wx.ALL, border=20)
         rightBox.Add(self.btn_start, proportion=1, flag=wx.EXPAND | wx.ALL, border=20)
@@ -223,6 +185,11 @@ class MainWindow(wx.Frame):
         self.Maximize()
         self.SetTitle("High-Throughput Plant Phenotyping Platform")
         self.Centre()
+
+    def OnClose(self, e):
+        self.sensor_handler.closeAll()
+        self.camera_frame.close()
+        self.DestroyLater()
 
     def OnNew(self, e):
         """ Toolbar option to reset log without saving """
@@ -242,7 +209,7 @@ class MainWindow(wx.Frame):
             self.plotter.refresh()
             self.mapPanel.clear()
             self.mapPanel.refresh()
-            self.clearVariables()
+            self.reset()
 
     def OnSave(self, e):
         """ Toolbar option to save and reset log """
@@ -260,7 +227,7 @@ class MainWindow(wx.Frame):
         self.plotter.refresh()
         self.mapPanel.clear()
         self.mapPanel.refresh()
-        self.clearVariables()
+        self.reset()
 
     def OnQuit(self, e):
         """ Toolbar option to exit application """
@@ -273,9 +240,7 @@ class MainWindow(wx.Frame):
     def OnCameraClose(self, e):
         """ Safely close camera frame """
         self.camerami.Check(False)
-        self.camera_frame.close()
-        self.camera_frame = CameraFrame(self, self.updateCameraPorts())
-        self.camera_frame.Hide()
+        self.updateCameraFrame()
 
     def OnAbout(self, e):
         """ Toolbar option to show About dialog """
@@ -298,17 +263,15 @@ class MainWindow(wx.Frame):
             results = pDialog.getSettings()
             num_sensors = results.ReadInt("numSensors", 1)
             self.cfg.WriteInt("numSensors", num_sensors)
+            self.labels = self.updateLabels()
             for label in self.labels:
                 self.cfg.WriteBool(
                     "connected" + label, results.ReadBool("connected" + label)
                 )
                 self.cfg.Write("port" + label, results.Read("port" + label))
+            self.updateCameraFrame()
             self.logSettings()
-            self.labels = self.getLabels()
             self.plotter.redoLegend(variables, devices, num_sensors)
-            self.camera_frame.close()
-            self.camera_frame = CameraFrame(self, self.updateCameraPorts())
-            self.camera_frame.Show(self.camerami.IsChecked())
         pDialog.Destroy()
 
     def OnLayout(self, e):
@@ -332,7 +295,7 @@ class MainWindow(wx.Frame):
         This removes every entry from the attribute cfg, except for a dummy
         entry 'notEmpty' to prevent the ConfigBase of being entirerly empty,
         which causes it to crash.
-        Not to be confounded with the method clearVariables(), which resets
+        Not to be confounded with the method reset(), which resets
         some other attributes whose values are only relevant for the current
         survey
         """
@@ -352,17 +315,6 @@ class MainWindow(wx.Frame):
             all_config_keys.remove("notEmpty")
             for key in all_config_keys:
                 self.cfg.DeleteEntry(key)
-
-    def OnTimer(self, e):
-        """ Function to be performed periodically as response to EVT_TIMER
-        If in 'Test Mode', instead of calling the getAllReadings() method,
-        it will call simulateSensorReadings()
-        """
-        is_test_mode = self.btn_test.GetValue()
-        if is_test_mode:
-            self.simulateSensorReadings()
-        else:
-            self.getAllReadings()
 
     def OnConnect(self, e):
         """ Toggle button action to connect/disconnect from sensors
@@ -384,38 +336,24 @@ class MainWindow(wx.Frame):
                         "connected" + label, False
                     ):
                         reading = [-73.939830, 45.423804]
-                        self.GPS_constants = setupGPSProjection(reading)
+                        self.sensor_handler.GPS_constants = setupGPSProjection(reading)
                 btn.SetLabelText("Disconnect")
             else:
                 btn.SetLabelText("Connect")
         else:
             if is_pressed:
-                self.label_to_device = {}
-                for label in self.labels:
-                    if self.cfg.ReadBool("connected" + label, False):
-                        port = self.cfg.Read("port" + label, "")
-                        if port == "":
-                            wx.MessageBox(
-                                (
-                                    "The port for "
-                                    + label
-                                    + "has not been properly selected"
-                                ),
-                                "Empty port",
-                                wx.OK | wx.ICON_WARNING,
-                            )
-                            break
-                        else:
-                            device = openPort(port, label)
-                            self.label_to_device[label] = device
-                            if label[0] == "g":
-                                reading = np.array([np.nan, np.nan])
-                                while any(np.isnan(reading)):
-                                    reading = getSensorReading(device, label)
-                                self.GPS_constants = setupGPSProjection(reading)
-                btn.SetLabelText("Disconnect")
+                success = self.sensor_handler.openAll()
+                if success:
+                    btn.SetLabelText("Disconnect")
+                else:
+                    wx.MessageBox(
+                        "At least one port has not been properly set up",
+                        "Empty port",
+                        wx.OK | wx.ICON_WARNING,
+                    )
+                    btn.SetValue(False)
             else:
-                self.disconnect()
+                self.sensor_handler.closeAll()
                 btn.SetLabelText("Connect")
         self.btn_start.Enable(is_pressed)
         self.btn_measure.Enable(is_pressed)
@@ -425,7 +363,7 @@ class MainWindow(wx.Frame):
         """ Button action to take measurements periodically
 
         When clicked for the first time, it will create a RepeatedTimer to call
-        getAllReadings() every second. When clicked again, it will stop the
+        readAll() every second. When clicked again, it will stop the
         timer.
         """
         btn = e.GetEventObject()
@@ -440,106 +378,48 @@ class MainWindow(wx.Frame):
         self.btn_measure.Enable(not is_pressed)
         self.btn_test.Enable(not is_pressed)
 
-    def OnMeasure(self, e):
-        """ Button action to take a single set of measurements
-
-        If in 'Test Mode', instead of calling the getAllReadings() method,
-        it will call simulateSensorReadings()
-        """
-        is_test_mode = self.btn_test.GetValue()
-        if is_test_mode:
-            self.simulateSensorReadings()
-        else:
-            self.getAllReadings()
-
     def OnErase(self, e):
         """ Button action to delete last measurement from log text """
         if self.logText.GetValue() != "":
             lastPosition = self.logText.GetLastPosition()
-            self.logText.Remove(self.lastRecord[-1], lastPosition)
-            if len(self.lastRecord) > 1:
-                del self.lastRecord[-1]
+            self.logText.Remove(self.last_record[-1], lastPosition)
+            if len(self.last_record) > 1:
+                del self.last_record[-1]
 
-    def sayHi(self):
-        """ Display text for debugging the OnStart method """
-        self.logText.AppendText("Hi, Roberto \n")
-
-    def simulateSensorReadings(self):
-        """ Return random numbers to represent behavior of getAllReadings()
-
-        For the GPS output the behavior is not random, but fixed.
-        It is used when in 'Test Mode'
-        """
-        self.lastRecord.append(self.logText.GetLastPosition())
-        self.logText.AppendText("*****" + str(self.numReadings) + "*****\n")
-        for label in self.labels:
-            if self.cfg.ReadBool("connected" + label, False):
-                if label[0] == "g":
-                    reading = [
-                        -73.939830 + 0.0001 * self.numReadings,
-                        45.423804 + 0.0001 * self.numReadings,
-                    ]
-                    # reading = [
-                    #     -73.939830 + 0.0001 * random.random(),
-                    #     45.423804 + 0.0001 * random.random(),
-                    # ]
-                    # reading = [
-                    #     -73.939830 + 0.0001,
-                    #     45.423804 + 0.0001,
-                    # ]
-                else:
-                    reading = []
-                    for i in range(len(variables[label[0]])):
-                        reading.append(random.random())
-                self.updateUI(np.array(reading), label)
-        self.plotter.refresh()
-        self.numReadings += 1
-
-    def getAllReadings(self):
-        """ Get readings from all sensors
-
-        Everytime a new measurement arrives, it triggers a call to the
-        updateUI() method
-        It also appends a header to the log text of the style '***0***'
-        Will fail if the Connect button is not activated
-        """
-        self.lastRecord.append(self.logText.GetLastPosition())
-        self.logText.AppendText("*****" + str(self.numReadings) + "*****\n")
-        for label in self.labels:
-            if self.cfg.ReadBool("connected" + label, False):
-                reading = getSensorReading(self.label_to_device[label], label)
-                self.updateUI(reading, label)
-        self.plotter.refresh()
-        self.numReadings += 1
-
-    def updateUI(self, someValue, label):
-        """ Updates UI after receiving new sensor data
+    def OnUpdate(self, e):
+        """ Updates UI by getting new sensor data
 
         This is a general method that calls the more specific ones if necessary
         """
-        if label[0] == "g":
-            values = processGPS(
-                someValue,
-                label,
-                self.GPS_constants,
-                self.numReadings,
-                self.previous_measurements,
-                self.cfg,
-            )
-            if values is None:
-                wx.MessageBox(
-                    ("The dimensions in Layout have not been " + "properly set"),
-                    "Empty port",
-                    wx.OK | wx.ICON_WARNING,
-                )
-            else:
-                self.updateMap(values, label)
-                self.updateLog(values, label)
-                self.updatePlot(values, label)
+        is_test_mode = self.btn_test.GetValue()
+        self.last_record.append(self.logText.GetLastPosition())
+        self.logText.AppendText("*****" + str(self.num_readings) + "*****\n")
+        if is_test_mode:
+            for label in self.labels:
+                if self.cfg.ReadBool("connected" + label, False):
+                    reading = self.sensor_handler.simulate(
+                        label, self.num_readings, self.cfg
+                    )
+                    if label[0] == "g":
+                        self.updateMap(reading, label)
+                    self.updateLog(reading, label)
+                    self.updatePlot(reading, label)
         else:
-            values = someValue
-            self.updateLog(values, label)
-            self.updatePlot(values, label)
+            for label in self.labels:
+                reading = self.sensor_handler.read(label)
+                if reading is None:
+                    wx.MessageBox(
+                        "The dimensions in Layout have not been properly set",
+                        "Empty port",
+                        wx.OK | wx.ICON_WARNING,
+                    )
+                else:
+                    if label == "g":
+                        self.updateMap(reading, label)
+                    self.updateLog(reading, label)
+                    self.updatePlot(reading, label)
+        self.plotter.refresh()
+        self.num_readings += 1
 
     def updateLog(self, someValue, label):
         """ Update log text after receiving new sensor data """
@@ -582,7 +462,7 @@ class MainWindow(wx.Frame):
         for i, measured_property in enumerate(measured_properties):
             # The first set of measurements produce just dots, while the
             # subsequent ones produce lines connecting those dots
-            if self.numReadings == 0:
+            if self.num_readings == 0:
                 if np.isnan(someValue[i]):
                     self.axes[measured_property].plot(
                         0,
@@ -600,11 +480,13 @@ class MainWindow(wx.Frame):
                         markerfacecolor="C" + str(color_number),
                     )
             else:
-                previous = self.previous_measurements[label + "/" + measured_property]
+                previous = self.sensor_handler.previous_measurements[
+                    label + "/" + measured_property
+                ]
                 if np.isnan(someValue[i]):
                     if np.isnan(previous):
                         self.axes[measured_property].plot(
-                            [self.numReadings - 1, self.numReadings],
+                            [self.num_readings - 1, self.num_readings],
                             [-1, -1],
                             marker=",",
                             color="C" + str(color_number),
@@ -612,7 +494,7 @@ class MainWindow(wx.Frame):
                         )
                     else:
                         self.axes[measured_property].plot(
-                            [self.numReadings - 1, self.numReadings],
+                            [self.num_readings - 1, self.num_readings],
                             [previous, -1],
                             marker=",",
                             color="C" + str(color_number),
@@ -621,14 +503,14 @@ class MainWindow(wx.Frame):
                 else:
                     if np.isnan(previous):
                         self.axes[measured_property].plot(
-                            [self.numReadings - 1, self.numReadings],
+                            [self.num_readings - 1, self.num_readings],
                             [-1, someValue[i]],
                             marker=",",
                             color="C" + str(color_number),
                             markerfacecolor="C" + str(color_number),
                         )
                         self.axes[measured_property].plot(
-                            self.numReadings,
+                            self.num_readings,
                             someValue[i],
                             marker="o",
                             color="C" + str(color_number),
@@ -636,13 +518,12 @@ class MainWindow(wx.Frame):
                         )
                     else:
                         self.axes[measured_property].plot(
-                            [self.numReadings - 1, self.numReadings],
+                            [self.num_readings - 1, self.num_readings],
                             [previous, someValue[i]],
                             marker="o",
                             color="C" + str(color_number),
                             markerfacecolor="C" + str(color_number),
                         )
-            self.previous_measurements[label + "/" + measured_property] = someValue[i]
 
     def updateMap(self, someValue, label):
         """ Update map after receiving new sensor data
@@ -656,7 +537,7 @@ class MainWindow(wx.Frame):
         at least two measurements are required to compute the heading, which
         in turn is required to know how to orient the sensor markers
         """
-        if (self.numReadings > 0) and (not any(np.isnan(someValue[4:7]))):
+        if (self.num_readings > 0) and (not any(np.isnan(someValue[4:7]))):
             vehicle_x = someValue[4]
             vehicle_y = someValue[5]
             heading_radians = math.pi * someValue[6] / 180
@@ -668,17 +549,13 @@ class MainWindow(wx.Frame):
                         db = self.cfg.ReadFloat("DB1") / 100
                     else:
                         color = "r"
-                        db = (
-                            self.cfg.ReadFloat("DB1") + self.cfg.ReadFloat("DB2")
-                        ) / 100
+                        db = (self.cfg.ReadFloat("DB1") + self.cfg.ReadFloat("DB2")) / 100
                     if label[0] == "e":
                         color = "g"
                         index = self.cfg.ReadInt("IE" + label[1])
                         accumulator = 0
                         for i in range(index):
-                            accumulator += self.cfg.ReadFloat(
-                                "D" + label[1] + str(i + 1)
-                            )
+                            accumulator += self.cfg.ReadFloat("D" + label[1] + str(i + 1))
                         if label[1] == "L":
                             ds = -1 * accumulator / 100
                         else:
@@ -687,9 +564,7 @@ class MainWindow(wx.Frame):
                     else:
                         accumulator = 0
                         for i in range(int(label[2])):
-                            accumulator += self.cfg.ReadFloat(
-                                "D" + label[1] + str(i + 1)
-                            )
+                            accumulator += self.cfg.ReadFloat("D" + label[1] + str(i + 1))
                         if label[1] == "L":
                             ds = -1 * accumulator / 100
                         else:
@@ -732,7 +607,7 @@ class MainWindow(wx.Frame):
             more, value, index = self.cfg.GetNextEntry(index)
         self.logText.AppendText("**************Settings-End****************\n")
 
-    def getLabels(self):
+    def updateLabels(self):
         """ Produces list of sensor labels
 
         Since many methods need to iterate over all the labels, it is handy to
@@ -756,32 +631,30 @@ class MainWindow(wx.Frame):
                 labels.append(initial + "R")
         return labels
 
-    def updateCameraPorts(self):
+    def updateSensorHandler(self):
+        if self.sensor_handler is not None:
+            self.sensor_handler.closeAll()
+        self.sensor_handler = SensorHandler()
+        for label in self.labels:
+            is_connected = self.cfg.ReadBool("connected" + label, False)
+            port = self.cfg.Read("port" + label, "")
+            if is_connected and (port != ""):
+                self.sensor_handler.add(port, label)
+
+    def updateCameraFrame(self):
         """ Formats camera ports as a list ready to be used as CameraFrame's input """
+        if self.camera_frame is not None:
+            self.camera_frame.close()
         camera_ports = [None, None]
         if self.cfg.ReadBool("connectedcL", False):
-            try:
-                camera_ports[0] = int(self.cfg.Read("portcL", ""))
-            except Exception as e:
-                pass
+            camera_ports[0] = int(self.cfg.Read("portcL", ""))
         if self.cfg.ReadBool("connectedcR", False):
-            try:
-                camera_ports[1] = int(self.cfg.Read("portcR", ""))
-            except Exception as e:
-                pass
-        return camera_ports
+            camera_ports[1] = int(self.cfg.Read("portcR", ""))
+        self.camera_frame = CameraFrame(self, camera_ports)
+        self.camera_frame.Show(self.camerami.IsChecked())
 
-    def disconnect(self):
-        """ Disconnect from all serial sensors """
-        all_devices = list(self.label_to_device.values())
-        for device in all_devices:
-            device.close()
-        self.label_to_device = {}
-
-    def clearVariables(self):
+    def reset(self):
         """ Resets the values of attributes any time a new survey starts """
-        self.labels = self.getLabels()
-        self.numReadings = 0
-        self.lastRecord = [0]
-        self.previous_measurements = {}
-        self.GPS_constants = [0, 180, 90, 0, 0]
+        self.labels = self.updateLabels()
+        self.num_readings = 0
+        self.last_record = [0]

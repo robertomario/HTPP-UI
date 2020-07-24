@@ -3,155 +3,13 @@
 # Author: Roberto Buelvas
 
 from threading import Thread
+import random
 import math
 import time
 
 import numpy as np
 import pynmea2
 import serial
-
-
-targets = {
-    "m": getMultispectralReading,
-    "u": getUltrasonicReading,
-    "g": getGPSReading,
-    "e": getEnvironmentalReading,
-}
-
-
-class SerialSensor:
-    def __init__(self, port, label, baudrate=38400):
-        self.port = port
-        self.label = label
-        self.read_function = targets[label[0]]
-        self.baudrate = baudrate
-        self.value = None
-        self.device = None
-        self.thread = None
-        self.is_connected = False
-        self.end_flag = True
-
-    def open(self):
-        """ 
-        Returns True or False depending if it succeeds
-        """
-        if not self.is_connected:
-            try:
-                self.device = serial.Serial(self.port, self.baudrate, timeout=1)
-                self.end_flag = False
-                self.thread = Thread(target=self.update, name=label, daemon=False)
-            except Exception as e:
-                self.device = None
-                self.thread = None
-                return False
-            else:
-                self.is_connected = True
-                return True
-
-    def close(self):
-        """ 
-        Assumed to always succeed. What could go wrong?
-        """
-        if self.is_connected:
-            self.end_flag = True
-            if self.thread is not None:
-                if self.thread.is_alive():
-                    self.thread.join()
-                self.thread = None
-            if self.device is not None:
-                if self.device.is_open:
-                    self.device.close()
-                self.device = None
-            self.is_connected = False
-
-    def read(self):
-        if self.is_connected:
-            return self.value
-        else:
-            return None
-
-    def update(self):
-        while not self.end_flag:
-            self.value = self.read_function(self.device)
-
-
-class SerialHandler:
-    def __init__(self):
-        self.sensors = {}
-
-    def addSerialSensor(self, port, label):
-        new_sensor = SerialSensor(port, label)
-        self.sensors[label] = new_sensor
-
-    def openAllPorts(self):
-        labels = list(self.sensors.keys())
-        for i, label in enumerate(labels):
-            success = self.sensors[label].open()
-            if not success:
-                break
-        # This condition would only be True if is_working was True for all devices
-        if self.sensors[labels[-1]].is_connected:
-            return True
-        else:
-            for j in range(i):
-                self.sensors[labels[j]].close()
-            return False
-
-    def closeAllPorts(self):
-        for sensor in self.sensors.values():
-            sensor.close()
-
-    def readSensor(self, label):
-        return self.sensors[label].read()
-
-    def readAllSensor(self):
-        output = {}
-        for label, sensor in self.sensors.items():
-            output[label] = sensor.read()
-        return output
-
-
-def openPort(port, label, baudrate):
-    """ Utility function to connect to serial device """
-    device = serial.Serial(port, baudrate)
-    device_thread = Thread(target=updateSensor, name=label, args=(label,), daemon=False)
-    return device
-
-
-def getSensorReading(device_port, label, is_device_ready=True):
-    """ Utility function to select proper function given label
-
-    Args:
-        device_port (Serial or str): Either pointer to serial device or name of
-                                     port. is_device_ready needs to match
-        label (str): Label of the style mL1 or gR to know which type of sensor
-                     is being used
-        is_device_ready (boolean): If True, device_port should be a serial
-                                   device e.g. output from openPort(). If
-                                   False, device_port should be the name of the
-                                   port e.g. 'COM3' in Windows
-    Returns:
-        reading (list): Output from one of the get{X}Reading() functions
-    """
-    if is_device_ready:
-        device_port.reset_input_buffer()
-        if label[0] == "m":
-            return getMultispectralReading(device_port)
-        if label[0] == "u":
-            return getUltrasonicReading(device_port)
-        if label[0] == "g":
-            return getGPSReading(device_port)
-        if label[0] == "e":
-            return getEnvironmentalReading(device_port)
-    else:
-        if label[0] == "m":
-            return getOpenMultispectralReading(device_port)
-        if label[0] == "u":
-            return getOpenUltrasonicReading(device_port)
-        if label[0] == "g":
-            return getOpenGPSReading(device_port)
-        if label[0] == "e":
-            return getOpenEnvironmentalReading(device_port)
 
 
 def getMultispectralReading(device, numValues=3, is_new_model=True):
@@ -333,160 +191,223 @@ def getEnvironmentalReading(device, numValues=3):
     return finalMeasurement
 
 
-# getOpen functions are not made to handle Exceptions yet
-def getOpenMultispectralReading(port, numValues=10, is_new_model=True):
-    """ Get reading from multispectral sensor
+# Cameras are not listed here because they are handled in cameras.py
 
-    These functions differ from the get{X}Reading() in that they open and close
-    the port with the serial device themselves. Sometimes this is preferred to
-    avoid errors that could be raised while the ports are open
-    """
-    serialCropCircle = serial.Serial(port, 38400)
-    if is_new_model:
-        ci = []
-        ndre = []
-        ndvi = []
-        proxyDistance = []
-        proxyLAI = []
-        proxyCCC = []
-        redEdge = []
-        nir = []
-        red = []
-        for i in range(numValues):
-            message = serialCropCircle.readline().strip().decode()
-            measurements = message.split(",")
-            measurements = [float(i) for i in measurements]
-            ci.append((measurements[6] / measurements[5]) - 1)
-            ndre.append(measurements[0])
-            ndvi.append(measurements[1])
-            proxyDistance.append(measurements[2])
-            proxyLAI.append(measurements[3])
-            proxyCCC.append(measurements[4])
-            redEdge.append(measurements[5])
-            nir.append(measurements[6])
-            red.append(measurements[7])
-        finalMeasurement = [
-            sum(ci),
-            sum(ndre),
-            sum(ndvi),
-            sum(proxyDistance),
-            sum(proxyLAI),
-            sum(proxyCCC),
-            sum(redEdge),
-            sum(nir),
-            sum(red),
-        ]
-    else:
-        ci = []
-        ndre = []
-        ndvi = []
-        redEdge = []
-        nir = []
-        red = []
-        for i in range(numValues):
-            message = serialCropCircle.readline().strip().decode()
-            measurements = message.split(",")
-            measurements = [float(i) for i in measurements]
-            ci.append((measurements[3] / measurements[2]) - 1)
-            ndre.append(measurements[0])
-            ndvi.append(measurements[1])
-            redEdge.append(measurements[2])
-            nir.append(measurements[3])
-            red.append(measurements[4])
-        finalMeasurement = [
-            sum(ci),
-            sum(ndre),
-            sum(ndvi),
-            sum(redEdge),
-            sum(nir),
-            sum(red),
-        ]
-    finalMeasurement = [measure / numValues for measure in finalMeasurement]
-    serialCropCircle.close()
-    return finalMeasurement
+# Dict to hold which sensor is the source for each measured variable
+# m >> Multispectral
+# u >> Ultrasonic
+# g >> GPS
+# e >> Environmental
+# The order needs to match that of the getXReading functions below
+variables = {
+    "m": [
+        "CI",
+        "NDRE",
+        "NDVI",
+        "proxy Distance",
+        "proxy LAI",
+        "proxy CCC",
+        "Red-Edge",
+        "NIR",
+        "Red",
+    ],
+    "u": ["Distance"],
+    "g": [
+        "Longitude",
+        "Latitude",
+        "GPS_X",
+        "GPS_Y",
+        "Vehicle_X",
+        "Vehicle_Y",
+        "Heading",
+        "Velocity",
+        "Time",
+    ],
+    "e": [
+        "Canopy Temperature",
+        "Air Temperature",
+        "Humidity",
+        "Reflected PAR",
+        "Incident PAR",
+        "Pressure",
+    ],
+}
 
 
-def getOpenUltrasonicReading(port, numValues=10):
-    """ Get reading from ultrasonic sensor """
-    serialUltrasonic = serial.Serial(port, 38400)
-    count = -1
-    finalMeasurement = 0
-    index = 0
-    message = b""
-    charList = [b"0", b"0", b"0", b"0", b"0"]
-    while count < numValues:
-        newChar = serialUltrasonic.read()
-        if newChar == b"\r":
-            count += 1
-            message = b"".join(charList)
-            measurement = 0.003384 * 25.4 * int(message)
-            finalMeasurement += measurement
-            message = b""
-            index = 0
+targets = {
+    "m": getMultispectralReading,
+    "u": getUltrasonicReading,
+    "g": getGPSReading,
+    "e": getEnvironmentalReading,
+}
+
+
+class SerialSensor:
+    def __init__(self, port, label, baudrate=38400):
+        self.port = port
+        self.label = label
+        self.read_function = targets[label[0]]
+        self.baudrate = baudrate
+        self.value = None
+        self.device = None
+        self.thread = None
+        self.is_connected = False
+        self.end_flag = True
+
+    def open(self):
+        """ 
+        Returns True or False depending if it succeeds
+        """
+        if not self.is_connected:
+            try:
+                self.device = serial.Serial(self.port, self.baudrate, timeout=1)
+                self.end_flag = False
+                self.thread = Thread(target=self.update, name=label, daemon=False)
+            except Exception as e:
+                self.device = None
+                self.thread = None
+                return False
+            else:
+                self.is_connected = True
+                return True
+
+    def close(self):
+        """ 
+        Assumed to always succeed
+        """
+        if self.is_connected:
+            self.end_flag = True
+            if self.thread is not None:
+                if self.thread.is_alive():
+                    self.thread.join()
+                self.thread = None
+            if self.device is not None:
+                if self.device.is_open:
+                    self.device.close()
+                self.device = None
+            self.is_connected = False
+
+    def read(self):
+        if self.is_connected:
+            return self.value
         else:
-            charList[index] = newChar
-            index += 1
-            if index > 5:
-                index = 0
-    serialUltrasonic.close()
-    return [finalMeasurement / numValues]
+            return None
+
+    def update(self):
+        while not self.end_flag:
+            self.value = self.read_function(self.device)
 
 
-def getOpenGPSReading(port, numValues=3):
-    """ Get reading from GPS sensor """
-    serialGPS = serial.Serial(port, 9600)
-    i = 0
-    while i < numValues:
-        message = serialGPS.readline().strip().decode()
-        if message[0:6] == "$GPGGA" or message[0:6] == "$GPGLL":
-            i += 1
-            parsedMessage = pynmea2.parse(message)
-            finalMeasurement = [parsedMessage.longitude, parsedMessage.latitude]
-    serialGPS.close()
-    return finalMeasurement
+class SensorHandler:
+    def __init__(self):
+        self.sensors = {}
+        self.current_measurements = {}
+        self.previous_measurements = {}
+        self.GPS_constants = None
 
+    def add(self, port, label):
+        new_sensor = SerialSensor(port, label)
+        self.sensors[label] = new_sensor
 
-def getOpenEnvironmentalReading(port, numValues=10):
-    """ Get reading from environmental sensor """
-    serialDAS = serial.Serial(port, 38400)
-    canopyT = []
-    humidity = []
-    airT = []
-    incidentPAR = []
-    reflectedPAR = []
-    AtmP = []
-    for i in range(numValues):
-        message = serialDAS.readline().strip().decode()
-        measurements = message.split(",")
-        measurements = [float(i) for i in measurements]
-        canopyT.append(measurements[0])
-        humidity.append(measurements[1])
-        airT.append(measurements[2])
-        incidentPAR.append(measurements[3])
-        reflectedPAR.append(measurements[4])
-        AtmP.append(measurements[5])
-    finalMeasurement = [
-        sum(canopyT),
-        sum(humidity),
-        sum(airT),
-        sum(incidentPAR),
-        sum(reflectedPAR),
-        sum(AtmP),
-    ]
-    finalMeasurement = [measure / numValues for measure in finalMeasurement]
-    serialDAS.close()
-    return finalMeasurement
+    def openAll(self):
+        labels = list(self.sensors.keys())
+        for i, label in enumerate(labels):
+            try:
+                success = self.sensors[label].open()
+                if label[0] == "g":
+                    self.setupGPS(label)
+            except Exception as e:
+                break
+            else:
+                if not success:
+                    break
+        # This condition would only be True if is_working was True for all devices
+        if self.sensors[labels[-1]].is_connected:
+            return True
+        else:
+            for j in range(i):
+                self.sensors[labels[j]].close()
+            return False
+
+    def closeAll(self):
+        for sensor in self.sensors.values():
+            sensor.close()
+
+    def simulate(self, label, num_readings, cfg):
+        self.previous_measurements = self.current_measurements.copy()
+        if label[0] == "g":
+            reading = [
+                -73.939830 + 0.0001 * num_readings,
+                45.423804 + 0.0001 * num_readings,
+            ]
+            # reading = [
+            #     -73.939830 + 0.0001 * random.random(),
+            #     45.423804 + 0.0001 * random.random(),
+            # ]
+            # reading = [
+            #     -73.939830 + 0.0001,
+            #     45.423804 + 0.0001,
+            # ]
+            reading = processGPS(
+                reading,
+                label,
+                self.GPS_constants,
+                self.previous_measurements,
+                num_readings,
+                cfg,
+            )
+        else:
+            reading = []
+            for i in range(len(variables[label[0]])):
+                reading.append(random.random())
+        for i, variable_name in enumerate(variables[label[0]]):
+            self.current_measurements[label + "/" + variable_name] = reading[i]
+        return reading
+
+    def read(self, label, num_readings, cfg):
+        self.previous_measurements = self.current_measurements.copy()
+        if label in self.sensors.keys():
+            reading = self.sensors[label].read()
+            if label == "g":
+                reading = processGPS(
+                    reading,
+                    label,
+                    self.GPS_constants,
+                    self.previous_measurements,
+                    num_readings,
+                    cfg,
+                )
+            for i, variable_name in enumarate(variables[label[0]]):
+                self.current_measurements[label + "/" + variable_name] = reading[i]
+            return reading
+        else:
+            return None
+
+    def readAll(self):
+        output = {}
+        for label, sensor in self.sensors.items():
+            output[label] = sensor.read()
+        return output
+
+    def hasLabel(self, label):
+        return label in self.sensors.keys()
+
+    def setupGPS(self, label):
+        reading = np.array([np.nan, np.nan])
+        while any(np.isnan(reading)):
+            reading = self.read(label)
+        self.GPS_constants = setupGPSProjection(reading)
 
 
 def setupGPSProjection(reading):
     """ Use 1 GPS reading to compute constants for projection to planar coordinates 
     
     The elevation has been temporarily hard-coded, but it should be made
-    adjustable as a setting
+    adjustable as a setting, if not read from the GPS
     """
     origin_time = time.time()
-    origin_latitude = math.pi * reading[1] / 180
     origin_longitude = math.pi * reading[0] / 180
+    origin_latitude = math.pi * reading[1] / 180
     a = 6378137  # Earth's semimajor axis
     b = 6356752.3142  # Earth's semiminor axis
     h = 20  # Current elevation over sea level
@@ -498,7 +419,7 @@ def setupGPSProjection(reading):
     return [origin_time, origin_longitude, origin_latitude, F_lon, F_lat]
 
 
-def processGPS(someValue, label, GPS_constants, num_readings, previous_measurements, cfg):
+def processGPS(someValue, label, GPS_constants, previous_measurements, num_readings, cfg):
     """ Estimates heading and velocity from GPS readings
 
     Project the measurements to planar coordinates and use the immediately previous
@@ -529,7 +450,7 @@ def processGPS(someValue, label, GPS_constants, num_readings, previous_measureme
         new_time - old_time
     )
     heading = 180 * heading_radians / math.pi
-    if (label[1] == "L") and cfg.HasEntry("DGLX"):
+    if (label[1] == "L") and cfg.HasEntry("DGLX") and cfg.HasEntry("DGLY"):
         dgx = cfg.ReadFloat("DGLX") / 100
         dgy = cfg.ReadFloat("DGLY") / 100
         vehicle_x = (
@@ -538,7 +459,7 @@ def processGPS(someValue, label, GPS_constants, num_readings, previous_measureme
         vehicle_y = (
             gps_y - dgx * math.cos(heading_radians) - dgy * math.sin(heading_radians)
         )
-    elif (label[1] == "R") and cfg.HasEntry("DGRX"):
+    elif (label[1] == "R") and cfg.HasEntry("DGRX") and cfg.HasEntry("DGRY"):
         dgx = cfg.ReadFloat("DGRX") / 100
         dgy = cfg.ReadFloat("DGRY") / 100
         vehicle_x = (
@@ -562,3 +483,48 @@ def processGPS(someValue, label, GPS_constants, num_readings, previous_measureme
             new_time,
         ]
     )
+
+
+# Deprecated
+def openPort(port, label, baudrate):
+    """ Utility function to connect to serial device """
+    device = serial.Serial(port, baudrate)
+    device_thread = Thread(target=updateSensor, name=label, args=(label,), daemon=False)
+    return device
+
+
+# Deprecated
+def getSensorReading(device_port, label, is_device_ready=True):
+    """ Utility function to select proper function given label
+
+    Args:
+        device_port (Serial or str): Either pointer to serial device or name of
+                                     port. is_device_ready needs to match
+        label (str): Label of the style mL1 or gR to know which type of sensor
+                     is being used
+        is_device_ready (boolean): If True, device_port should be a serial
+                                   device e.g. output from openPort(). If
+                                   False, device_port should be the name of the
+                                   port e.g. 'COM3' in Windows
+    Returns:
+        reading (list): Output from one of the get{X}Reading() functions
+    """
+    if is_device_ready:
+        device_port.reset_input_buffer()
+        if label[0] == "m":
+            return getMultispectralReading(device_port)
+        if label[0] == "u":
+            return getUltrasonicReading(device_port)
+        if label[0] == "g":
+            return getGPSReading(device_port)
+        if label[0] == "e":
+            return getEnvironmentalReading(device_port)
+    else:
+        if label[0] == "m":
+            return getOpenMultispectralReading(device_port)
+        if label[0] == "u":
+            return getOpenUltrasonicReading(device_port)
+        if label[0] == "g":
+            return getOpenGPSReading(device_port)
+        if label[0] == "e":
+            return getOpenEnvironmentalReading(device_port)
