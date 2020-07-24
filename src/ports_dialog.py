@@ -41,9 +41,9 @@ class PortsDialog(wx.Dialog):
             See MainWindow.getLabel()
     """
 
-    def __init__(self, settings, *args, **kw):
+    def __init__(self, parent, settings, *args, **kw):
         """ Create new dialog """
-        super(PortsDialog, self).__init__(*args, **kw)
+        super(PortsDialog, self).__init__(parent, *args, **kw)
         self.settings = settings
         self.initUI(self.settings.ReadInt("numSensors", 1))
         self.SetSize((650, 500))
@@ -60,9 +60,7 @@ class PortsDialog(wx.Dialog):
         vbox1 = wx.BoxSizer(wx.VERTICAL)
 
         hbox0 = wx.BoxSizer(wx.HORIZONTAL)
-        st0 = wx.StaticText(
-            pnl, label="Number of sensor units per side", size=(300, 30)
-        )
+        st0 = wx.StaticText(pnl, label="Number of sensor units per side", size=(300, 30))
         hbox0.Add(st0, proportion=0, flag=wx.ALL)
         self.spinCtrl = wx.SpinCtrl(pnl, min=1, initial=num_sensors)
         self.spinCtrl.Bind(wx.EVT_TEXT, self.OnNumberChange)
@@ -81,13 +79,9 @@ class PortsDialog(wx.Dialog):
             vbox_aux.Add(st_aux, proportion=0, flag=wx.ALL)
             if scaling:
                 for i in range(num_sensors):
-                    self.addCheckComboBoxes(
-                        vbox_aux, pnl, ports, name, "L", number=i + 1
-                    )
+                    self.addCheckComboBoxes(vbox_aux, pnl, ports, name, "L", number=i + 1)
                 for i in range(num_sensors):
-                    self.addCheckComboBoxes(
-                        vbox_aux, pnl, ports, name, "R", number=i + 1
-                    )
+                    self.addCheckComboBoxes(vbox_aux, pnl, ports, name, "R", number=i + 1)
             else:
                 self.addCheckComboBoxes(vbox_aux, pnl, ports, name, "L")
                 self.addCheckComboBoxes(vbox_aux, pnl, ports, name, "R")
@@ -97,9 +91,7 @@ class PortsDialog(wx.Dialog):
         vbox_aux = wx.BoxSizer(wx.VERTICAL)
         st_aux = wx.StaticText(pnl, label="Camera", size=(120, 30))
         vbox_aux.Add(st_aux, proportion=0, flag=wx.ALL)
-        vbox1.Add(
-            vbox_aux, proportion=1, border=10, flag=wx.TOP | wx.BOTTOM | wx.EXPAND
-        )
+        vbox1.Add(vbox_aux, proportion=1, border=10, flag=wx.TOP | wx.BOTTOM | wx.EXPAND)
         self.addCheckComboBoxes(vbox_aux, pnl, cameras, "Camera", "L")
         self.addCheckComboBoxes(vbox_aux, pnl, cameras, "Camera", "R")
         pnl.SetSizer(vbox1)

@@ -42,9 +42,9 @@ class LayoutDialog(wx.Dialog):
     in this dialog
     """
 
-    def __init__(self, settings, *args, **kw):
+    def __init__(self, parent, settings, *args, **kw):
         """ Create new dialog """
-        super(LayoutDialog, self).__init__(*args, **kw)
+        super(LayoutDialog, self).__init__(parent, *args, **kw)
         self.settings = settings
         self.initUI()
         self.SetSize((650, 500))
