@@ -1,4 +1,7 @@
-""" Define usage of sensors """
+""" Define usage of sensors 
+
+Cameras are not listed here because they are handled in cameras.py
+"""
 
 # Author: Roberto Buelvas
 
@@ -10,6 +13,9 @@ import time
 import numpy as np
 import pynmea2
 import serial
+
+
+# Basic functions
 
 
 def getMultispectralReading(device, numValues=3, is_new_model=True):
@@ -191,7 +197,7 @@ def getEnvironmentalReading(device, numValues=3):
     return finalMeasurement
 
 
-# Cameras are not listed here because they are handled in cameras.py
+# Dictionaries
 
 # Dict to hold which sensor is the source for each measured variable
 # m >> Multispectral
@@ -234,6 +240,7 @@ variables = {
 }
 
 
+# Dict to hold which function should be used to read from each type of sensor
 targets = {
     "m": getMultispectralReading,
     "u": getUltrasonicReading,
@@ -242,8 +249,28 @@ targets = {
 }
 
 
+# Classes
+
+
 class SerialSensor:
+    """ Wrapper class to control serial.Serial instances
+    
+    Attr:
+        port (str): Name of port in 'COM3' format for Windows
+        label (str): Label indicating sensor in the 'mR1' or 'gL' format
+        read_function (function): Function used to read from sensor
+        baudrate (int): Baudrate for serial communication. Default is 38400
+        value (np.ndarray): Latest reading from the sensor
+        device (serial.Serial): Core object that represents the sensor
+        thread (threading.Thread): Thread used to read constantly without blocking the
+            main operation of the code
+        is_connected (bool): Indicator to now if connection with the port has already
+            been established
+        end_flag (bool): Flag to indicate when thread should end its operation
+    """
+
     def __init__(self, port, label, baudrate=38400):
+        """ Initialize attributes """
         self.port = port
         self.label = label
         self.read_function = targets[label[0]]
@@ -255,7 +282,8 @@ class SerialSensor:
         self.end_flag = True
 
     def open(self):
-        """ 
+        """ Connect to port and define thread
+
         Returns True or False depending if it succeeds
         """
         if not self.is_connected:
@@ -272,7 +300,8 @@ class SerialSensor:
                 return True
 
     def close(self):
-        """ 
+        """ End communication with port and kill thread
+
         Assumed to always succeed
         """
         if self.is_connected:
@@ -288,28 +317,53 @@ class SerialSensor:
             self.is_connected = False
 
     def read(self):
+        """ Return latest reading """
         if self.is_connected:
             return self.value
         else:
             return None
 
     def update(self):
+        """ Get new reading
+        
+        Target function of the thread """
         while not self.end_flag:
             self.value = self.read_function(self.device)
 
 
 class SensorHandler:
+    """ Class to control multiple SerialSensor objects at once 
+    
+    Attr:
+        sensors (dict): Keys are labels in the 'mL1' or 'gR' format. Values are
+            SerialSensor objects
+        current_measurements (dict): Keys are labels in the 'mL1' or 'gR' format. Values
+            are np.ndarray with the latest readings from each sensor
+        previous_measurements (dict): Keys are labels in the 'mL1' or 'gR' format. Values
+            are np.ndarray with the second to last readings from each sensor
+        GPS_constants (list): Values used to project GPS reading to planar coordinates
+            [origin_time, origin_longitude, origin_latitude, F_lon, F_lat]
+    """
+
     def __init__(self):
+        """ Define empty attributes """
         self.sensors = {}
         self.current_measurements = {}
         self.previous_measurements = {}
         self.GPS_constants = None
 
     def add(self, port, label):
+        """ Appends items to the sensors dict """
         new_sensor = SerialSensor(port, label)
         self.sensors[label] = new_sensor
 
     def openAll(self):
+        """ Connects to all the sensors added so far 
+
+        If at some point it encounters an error, it will cancel the operation and
+        disconnect from the sensor that it had connected until that point.
+        Returns True if operation was successful, False otherwise.      
+        """
         labels = list(self.sensors.keys())
         for i, label in enumerate(labels):
             try:
@@ -330,10 +384,25 @@ class SensorHandler:
             return False
 
     def closeAll(self):
+        """ Disconnect from all sensors """
         for sensor in self.sensors.values():
             sensor.close()
 
     def simulate(self, label, num_readings, cfg):
+        """ Produces output that represents the readings of a sensor 
+        
+        For GPS, it simulates a predefined curve. For every other sensor, it produces
+            random numbers
+        Args:
+            label (str): Label in 'mL1' or 'gR' format indicating which sensor to read
+            num_readings(int): Number of readings performed so far. Only relevant for GPS
+                readings
+            cfg (wx.Config): Only relevant for GPS readings. Interface to config file of
+                the wx App. Contains values like distances between sensors used for
+                processing the GPS reading
+        Return:
+            reading (np.ndarray): Simulated reading from sensor
+        """
         self.previous_measurements = self.current_measurements.copy()
         if label[0] == "g":
             reading = [
@@ -362,9 +431,22 @@ class SensorHandler:
                 reading.append(random.random())
         for i, variable_name in enumerate(variables[label[0]]):
             self.current_measurements[label + "/" + variable_name] = reading[i]
-        return reading
+        return np.array(reading)
 
     def read(self, label, num_readings, cfg):
+        """ Produces the readings of a sensor 
+        
+        Args:
+            label (str): Label in 'mL1' or 'gR' format indicating which sensor to read.
+                If the label hasn't been added previously, the reading is None
+            num_readings(int): Number of readings performed so far. Only relevant for GPS
+                readings
+            cfg (wx.Config): Only relevant for GPS readings. Interface to config file of
+                the wx App. Contains values like distances between sensors used for
+                processing the GPS reading
+        Return:
+            reading (np.ndarray): Reading from sensor
+        """
         self.previous_measurements = self.current_measurements.copy()
         if label in self.sensors.keys():
             reading = self.sensors[label].read()
@@ -383,20 +465,23 @@ class SensorHandler:
         else:
             return None
 
-    def readAll(self):
-        output = {}
-        for label, sensor in self.sensors.items():
-            output[label] = sensor.read()
-        return output
-
     def hasLabel(self, label):
+        """ Check if a specific sensor has been added before """
         return label in self.sensors.keys()
 
     def setupGPS(self, label):
+        """ Produce GPS constants to convert to planar coordinates
+        
+        Before finding the values of the constants, it repeats reading from the sensor
+            until a 'good' reading happens i.e. no NaN values
+        """
         reading = np.array([np.nan, np.nan])
         while any(np.isnan(reading)):
             reading = self.read(label)
         self.GPS_constants = setupGPSProjection(reading)
+
+
+# Other functions
 
 
 def setupGPSProjection(reading):

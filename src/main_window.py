@@ -3,7 +3,6 @@
 # Author: Roberto Buelvas
 
 from datetime import datetime
-import random
 import time
 import math
 import os
@@ -16,7 +15,7 @@ from .ports_dialog import PortsDialog, devices
 from .plot_notebook import Plot, PlotNotebook
 from .repeated_timer import RepeatedTimer
 from .layout_dialog import LayoutDialog
-from .camera_handler import CameraFrame
+from .cameras import CameraFrame
 
 
 class MainWindow(wx.Frame):
@@ -35,26 +34,19 @@ class MainWindow(wx.Frame):
         btn_test (wx.ToggleButton): Button to toggle in and out of 'Test Mode'
         btn_measure (wx.Button): Button to take a single set of readings
         logText (wx.TextCtrl): Control where information is logged
+        timer (wx.Timer): Object to call a function periodically
+        sensor_handler (SensorHandler): Object to control multiple sensors at once
         camera_frame (CameraFrame): Secondary frame to display video from cameras
         mapAxes (matplotlib.Axes): Axes to create map plot
         mapPanel (Plot): Panel containing the Figure where the map is drawn
-        rt (RepeatedTimer): Object to create a new thread on timer periodically
         axes (dict): Dict to hold the Axes for each measured variables. Keys
             are of the format 'mL1/NDVI' or 'gR/Latitude'. Used to create the
             plots
-        label_to_device (dict): Dict to hold the serial devices for each label.
-            Keys are labels of the format 'mL1' or 'gR'. Used to get sensor
-            readings
-        previous_measurements (dict): Dict to hold the measurements taken in
-            the immediately previous set. Keys are of the format 'mL1/NDVI' or
-            'gR/Latitude'. Used to create the plots and process GPS data
         labels (list): List of all possible labels of the style mL1 or gR given
             the number of scaling sensors
         last_record (list): List showing positions in the text log where each
             set of measurements ends. Used to erase the last set of values from
             the log text
-        GPS_constants (lists): Stores values to use for conversion to planar
-            coordinates. [origin_time, origin_longitude, origin_latitude, F_lon, F_lat]
         num_readings (int): Stores how many sets of measurements have been taken
             in the current survey. Set back to 0 when log text is cleared or
             exported to file
@@ -187,6 +179,10 @@ class MainWindow(wx.Frame):
         self.Centre()
 
     def OnClose(self, e):
+        """ Response to close event
+        
+        Make sure to disconnect from all sensors and camera before exiting
+        """
         self.sensor_handler.closeAll()
         self.camera_frame.close()
         self.DestroyLater()
@@ -257,7 +253,7 @@ class MainWindow(wx.Frame):
 
     def OnPorts(self, e):
         """ Toolbar option to open ports dialog window """
-        pDialog = PortsDialog(self.cfg, self)
+        pDialog = PortsDialog(self, self.cfg)
         dialogFlag = pDialog.ShowModal()
         if dialogFlag == wx.ID_OK:
             results = pDialog.getSettings()
@@ -269,6 +265,7 @@ class MainWindow(wx.Frame):
                     "connected" + label, results.ReadBool("connected" + label)
                 )
                 self.cfg.Write("port" + label, results.Read("port" + label))
+            self.updateSensorHandler()
             self.updateCameraFrame()
             self.logSettings()
             self.plotter.redoLegend(variables, devices, num_sensors)
@@ -276,7 +273,7 @@ class MainWindow(wx.Frame):
 
     def OnLayout(self, e):
         """ Toolbar option to open ports dialog window """
-        lDialog = LayoutDialog(self.cfg, self)
+        lDialog = LayoutDialog(self, self.cfg)
         dialogFlag = lDialog.ShowModal()
         if dialogFlag == wx.ID_OK:
             results = lDialog.getSettings()
@@ -319,12 +316,10 @@ class MainWindow(wx.Frame):
     def OnConnect(self, e):
         """ Toggle button action to connect/disconnect from sensors
 
-        Besides opening the ports to the serial devices, this method also
-        populates the attribute label_to_device for later use
-        It also does a first GPS reading to set the constants of processing
-        The GPS reading is repeated until it works perfectly (no None values)
         When in 'Test Mode', it simulates a first GPS reading to compute the projection
         constants
+        Start and Measure buttons are only enabled if connected
+        Test button is only enabled if disconnected 
         """
         btn = e.GetEventObject()
         is_pressed = btn.GetValue()
@@ -362,9 +357,8 @@ class MainWindow(wx.Frame):
     def OnStart(self, e):
         """ Button action to take measurements periodically
 
-        When clicked for the first time, it will create a RepeatedTimer to call
-        readAll() every second. When clicked again, it will stop the
-        timer.
+        When clicked for the first time, it will start the timer. When clicked again,
+        it will stop it.
         """
         btn = e.GetEventObject()
         is_pressed = btn.GetValue()
@@ -632,6 +626,7 @@ class MainWindow(wx.Frame):
         return labels
 
     def updateSensorHandler(self):
+        """ Create sensor handler and populate it by adding serial sensors """
         if self.sensor_handler is not None:
             self.sensor_handler.closeAll()
         self.sensor_handler = SensorHandler()
@@ -642,7 +637,7 @@ class MainWindow(wx.Frame):
                 self.sensor_handler.add(port, label)
 
     def updateCameraFrame(self):
-        """ Formats camera ports as a list ready to be used as CameraFrame's input """
+        """ Format camera ports as a list ready to be used as CameraFrame's input """
         if self.camera_frame is not None:
             self.camera_frame.close()
         camera_ports = [None, None]
@@ -654,7 +649,7 @@ class MainWindow(wx.Frame):
         self.camera_frame.Show(self.camerami.IsChecked())
 
     def reset(self):
-        """ Resets the values of attributes any time a new survey starts """
+        """ Reset the values of attributes any time a new survey starts """
         self.labels = self.updateLabels()
         self.num_readings = 0
         self.last_record = [0]
