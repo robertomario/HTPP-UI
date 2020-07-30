@@ -18,7 +18,7 @@ import serial
 # Basic functions
 
 
-def getMultispectralReading(device, numValues=3, is_new_model=True):
+def getMultispectralReading(line_reader, numValues=3, is_new_model=True):
     """ Get reading from multispectral sensor
 
     The multispectral sensors are ACS-430 or ACS-435 from Holland Scientific
@@ -49,7 +49,7 @@ def getMultispectralReading(device, numValues=3, is_new_model=True):
         values.fill(np.nan)
         for i in range(numValues):
             try:
-                message = device.readline().strip().decode()
+                message = line_reader.readline().strip().decode()
             except Exception as e:
                 pass
             else:
@@ -68,7 +68,7 @@ def getMultispectralReading(device, numValues=3, is_new_model=True):
         values.fill(np.nan)
         for i in range(numValues):
             try:
-                message = device.readline().strip().decode()
+                message = line_reader.readline().strip().decode()
             except Exception as e:
                 pass
             else:
@@ -87,7 +87,7 @@ def getMultispectralReading(device, numValues=3, is_new_model=True):
     return finalMeasurement
 
 
-def getUltrasonicReading(device, numValues=3):
+def getUltrasonicReading(line_reader, numValues=3):
     """ Get reading from ultrasonic sensor
 
     The ultrasonic sensor is ToughSonic14 from Senix
@@ -108,7 +108,7 @@ def getUltrasonicReading(device, numValues=3):
         message = b""
         charList = [b"0", b"0", b"0", b"0", b"0"]
         while count < numValues:
-            newChar = device.read()
+            newChar = line_reader.serial_device.read()
             if newChar == b"\r":
                 message = b"".join(charList)
                 measurement = 0.00875 * (int(message) - 15.3)
@@ -130,7 +130,7 @@ def getUltrasonicReading(device, numValues=3):
         return np.nanmean(values, axis=0)
 
 
-def getGPSReading(device, numValues=2):
+def getGPSReading(line_reader, numValues=2):
     """ Get reading from GPS sensor
 
     The GPS receiver is 19x HVS from Garmin
@@ -147,7 +147,7 @@ def getGPSReading(device, numValues=2):
     values.fill(np.nan)
     while count < numValues:
         try:
-            message = device.readline().strip().decode()
+            message = line_reader.readline().strip().decode()
             parsedMessage = pynmea2.parse(message)
             if message[0:6] == "$GPGGA":
                 count += 1
@@ -164,7 +164,7 @@ def getGPSReading(device, numValues=2):
     return finalMeasurement
 
 
-def getEnvironmentalReading(device, numValues=3):
+def getEnvironmentalReading(line_reader, numValues=3):
     """ Get reading from environmental sensor
 
     The environmental sensor is DAS43X from Holland Scientific.
@@ -182,7 +182,7 @@ def getEnvironmentalReading(device, numValues=3):
     values.fill(np.nan)
     for i in range(numValues):
         try:
-            message = device.readline().strip().decode()
+            message = line_reader.readline().strip().decode()
         except Exception as e:
             print("Skipped error in Environmental reading")
             print(str(e))
@@ -256,6 +256,30 @@ targets = {
 # Classes
 
 
+# https://github.com/pyserial/pyserial/issues/216
+class ReadLine:
+    def __init__(self, serial_device):
+        self.buf = bytearray()
+        self.serial_device = serial_device
+
+    def readline(self):
+        i = self.buf.find(b"\n")
+        if i >= 0:
+            r = self.buf[: i + 1]
+            self.buf = self.buf[i + 1 :]
+            return r
+        while True:
+            i = max(1, min(2048, self.serial_device.in_waiting))
+            data = self.serial_device.read(i)
+            i = data.find(b"\n")
+            if i >= 0:
+                r = self.buf + data[: i + 1]
+                self.buf[0:] = data[i + 1 :]
+                return r
+            else:
+                self.buf.extend(data)
+
+
 class SerialSensor:
     """ Wrapper class to control serial.Serial instances
     
@@ -280,7 +304,7 @@ class SerialSensor:
         self.read_function = targets[label[0]]
         self.baudrate = baudrate
         self.value = None
-        self.device = None
+        self.line_reader = None
         self.thread = None
         self.is_connected = False
         self.end_flag = True
@@ -292,13 +316,14 @@ class SerialSensor:
         """
         if not self.is_connected:
             try:
-                self.device = serial.Serial(self.port, self.baudrate, timeout=1)
+                device = serial.Serial(self.port, self.baudrate, timeout=1)
+                self.line_reader = ReadLine(device)
                 self.end_flag = False
                 self.thread = Thread(target=self.update, name=self.label, daemon=False)
                 self.thread.start()
             except Exception as e:
                 print(str(e))
-                self.device = None
+                self.line_reader = None
                 self.thread = None
                 return False
             else:
@@ -318,10 +343,10 @@ class SerialSensor:
                 if self.thread.is_alive():
                     self.thread.join()
                 self.thread = None
-            if self.device is not None:
-                if self.device.is_open:
-                    self.device.close()
-                self.device = None
+            if self.line_reader is not None:
+                if self.line_reader.serial_device.is_open:
+                    self.line_reader.serial_device.close()
+                self.line_reader = None
             self.is_connected = False
 
     def read(self):
@@ -336,7 +361,7 @@ class SerialSensor:
         
         Target function of the thread """
         while not self.end_flag:
-            self.value = self.read_function(self.device)
+            self.value = self.read_function(self.line_reader)
 
 
 class SensorHandler:
@@ -522,7 +547,9 @@ def setupGPSProjection(reading):
     return [origin_time, origin_longitude, origin_latitude, F_lon, F_lat]
 
 
-def processGPS(someValue, label, GPS_constants, previous_measurements, num_readings, cfg):
+def processGPS(
+    someValue, label, GPS_constants, previous_measurements, num_readings, cfg
+):
     """ Estimates heading and velocity from GPS readings
 
     Project the measurements to planar coordinates and use the immediately previous

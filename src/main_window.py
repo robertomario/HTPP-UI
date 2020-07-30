@@ -374,7 +374,7 @@ class MainWindow(wx.Frame):
         btn = e.GetEventObject()
         is_pressed = btn.GetValue()
         if is_pressed:
-            self.timer.Start(1000.0)
+            self.timer.Start(200.0)
             btn.SetLabelText("Stop")
         else:
             self.timer.Stop()
@@ -423,7 +423,7 @@ class MainWindow(wx.Frame):
     def updateLog(self, someValue, label):
         """ Update log text after receiving new sensor data """
         if someValue is not None:
-            ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            ts = datetime.now().strftime("%H:%M:%S.%f")
             value_text = []
             for value in someValue:
                 value_text.append(str(np.round(value, 4)))
