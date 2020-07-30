@@ -413,7 +413,7 @@ class MainWindow(wx.Frame):
             for label in self.labels:
                 reading = self.sensor_handler.read(label, self.num_readings, self.cfg)
                 if reading is not None:
-                    if label == "g":
+                    if label[0] == "g":
                         self.updateMap(reading, label)
                     self.updateLog(reading, label)
                     self.updatePlot(reading, label)
