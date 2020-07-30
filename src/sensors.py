@@ -101,29 +101,33 @@ def getUltrasonicReading(device, numValues=3):
         Distance: mm
     """
     try:
+        values = np.empty((numValues, 1))
+        values.fill(np.nan)
         count = 0
-        finalMeasurement = 0
         index = 0
         message = b""
         charList = [b"0", b"0", b"0", b"0", b"0"]
         while count < numValues:
             newChar = device.read()
             if newChar == b"\r":
-                count += 1
                 message = b"".join(charList)
-                measurement = 0.003384 * 25.4 * int(message)
-                finalMeasurement += measurement
+                measurement = 0.00875 * (int(message) - 15.3)
+                if measurement >= 0:
+                    values[count, 0] = measurement
                 message = b""
                 index = 0
+                count += 1
             else:
                 charList[index] = newChar
                 index += 1
                 if index >= 5:
                     index = 0
     except Exception as e:
+        print("Skipped error in Ultrasonic reading")
+        print(str(e))
         return np.array([np.nan])
     else:
-        return np.array([finalMeasurement / numValues])
+        return np.nanmean(values, axis=0)
 
 
 def getGPSReading(device, numValues=2):
