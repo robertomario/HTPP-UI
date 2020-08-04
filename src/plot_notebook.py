@@ -11,10 +11,27 @@ import wx
 
 
 class Map(wx.Panel):
-    """ Class to display a plot in wx """
+    """ Class to display map in wx from GPS readings 
+    
+    Attr:
+        figure (mpl.figure.Figure): Figure that displays plots
+        ax (mpl.axes.Axes): Axes inside figure
+        canvas (FigureCanvasWxAgg): Canvas where the figure paints
+        point_len (int): Maximum number of points to display at a time
+        lines (list<list<mpl.lines.Line2D>>): In each iteration, multiple lines are added:
+            some for the vehicle and some others for each sensor. This list of lists
+            keeps track of them to be able to delete them later
+    """
 
     def __init__(self, parent, id=-1, point_len=30, dpi=None, **kwargs):
-        """ Create empty plot """
+        """ Create empty plot in panel 
+        Args:
+            parent (wx.Window): Parent object for the panel
+            id (int): ID for the panel. -1 takes a random free id.
+            point_len (int): Initial values of the point_len attribute
+            dpi (int or None): Resolution in dots per inch. None uses a default that
+                that seems to be close to 100
+        """
         wx.Panel.__init__(self, parent, id=id, **kwargs)
         self.figure = mpl.figure.Figure(dpi=dpi, figsize=(2, 2))
         self.ax = self.figure.gca()
@@ -26,8 +43,11 @@ class Map(wx.Panel):
         self.clear()
 
     def refresh(self, line_list):
-        """ Function to tell the Plot to actually implement the latest
+        """ Tell the Plot to actually implement the latest
             modifications
+
+        line and old_line_list are emptied in the end to make sure no reference remains
+        to the line objects and the garbage collector actually removes them
 
         Documentation for this backend is kinda poor, but basically whenever
         something important needs to be done, it will only work if called from
@@ -45,31 +65,35 @@ class Map(wx.Panel):
         self.canvas.draw_idle()
 
     def clear(self):
-        """ Function to clear the Axes of the Figure """
+        """ Clear the Axes of the Figure """
         self.lines = []
-        self.min_x = 0
-        self.max_x = 1
-        self.min_y = 0
-        self.max_y = 1
         self.figure.gca().cla()
 
     def updateLimits(self):
+        """ Find the limits of the data to adjust axes """
         x_values = []
         y_values = []
         for line_list in self.lines:
             x_values.append(line_list[0].get_xdata()[0])
             y_values.append(line_list[0].get_ydata()[0])
-        time1 = time.time()
-        self.min_x = min(x_values) - 1
-        self.max_x = max(x_values) + 1
-        self.min_y = min(y_values) - 1
-        self.max_y = max(y_values) + 1
-        self.ax.set_xlim(self.min_x, self.max_x)
-        self.ax.set_ylim(self.min_y, self.max_y)
+        min_x = min(x_values) - 1
+        max_x = max(x_values) + 1
+        min_y = min(y_values) - 1
+        max_y = max(y_values) + 1
+        self.ax.set_xlim(min_x, max_x)
+        self.ax.set_ylim(min_y, max_y)
 
 
 class Plot(wx.Panel):
-    """ Class to display a plot in wx """
+    """ Class to display a plot in wx 
+        figure (mpl.figure.Figure): Figure that displays plots
+        ax (mpl.axes.Axes): Axes inside figure
+        canvas (FigureCanvasWxAgg): Canvas where the figure paints
+        x_len (int): Maximum number of points to display at a time
+        background (BufferRegion): Empty background to leverage blitting
+        lines (list<mpl.lines.Line2D>): Each sensor of the same type has a line in this
+            list. Used to update them later with different data
+    """
 
     def __init__(self, parent, x_len, id=-1, dpi=100, **kwargs):
         """ Create empty plot """
@@ -78,6 +102,7 @@ class Plot(wx.Panel):
         self.figure = mpl.figure.Figure(dpi=dpi, figsize=(6.5, 6.5))
         self.ax = self.figure.add_axes([0.1, 0.1, 0.7, 0.85])
         self.ax.set_xlim(0, self.x_len)
+        self.ax.autoscale(enable=True, axis="y", tight=True)
         self.canvas = FigureCanvas(self, -1, self.figure)
         sizer = wx.BoxSizer(wx.VERTICAL)
         sizer.Add(self.canvas, 0, wx.ALL)
@@ -88,6 +113,7 @@ class Plot(wx.Panel):
         self.lines = []
 
     def updateLines(self, plot_data):
+        """ Redefine lines attribute as response to change in notebook """
         self.clear()
         self.lines = []
         for i in range(plot_data.data.shape[0]):
@@ -98,36 +124,21 @@ class Plot(wx.Panel):
                     marker="o",
                     color="C" + str(i),
                     markerfacecolor="C" + str(i),
-                    animated=True,
                 )[0]
             )
         self.redoLegend(plot_data)
-        self.updateYLim(plot_data)
-
-    def updateYLim(self, plot_data):
-        limits_change = False
-        current_max = np.max(plot_data.data)
-        current_min = np.min(plot_data.data)
-        if current_max > plot_data.max_data:
-            plot_data.max_data = current_max
-            limits_change = True
-        if current_min < plot_data.min_data:
-            plot_data.min_data = current_min
-            limits_change = True
-        if limits_change:
-            self.ax.set_ylim(plot_data.min_data, plot_data.max_data)
-            self.canvas.draw_idle()
 
     def refresh(self, plot_data):
-        """ Function to tell the Plot to actually implement the latest
+        """ Tell the Plot to actually implement the latest
             modifications
+
+        Use canvas.blit() instead of canvas.draw_idle() to save time
 
         Documentation for this backend is kinda poor, but basically whenever
         something important needs to be done, it will only work if called from
         the FigureCanvas, not the Figure
         """
         self.canvas.restore_region(self.background)
-        self.updateYLim(plot_data)
         for line, data in zip(self.lines, plot_data.data):
             line.set_ydata(data)
             self.ax.add_line(line)
@@ -209,13 +220,33 @@ class Plot(wx.Panel):
 
 
 class PlotData:
+    """ Wrapper for y-data of each plots
+    
+    Instead of having multiple plots, this class holds the information that would be in
+    each and just the one that is active is displayed. It also handles trimming the values
+    to be of fixed length
+
+    Attr:
+        x_len (int): Maximum number of points to display at a time
+        sensor_type (str): Initial letter of the sensor, like in the keys of variables
+            dict
+        scaling (bool): Indicate if there are multiple or only one sensor of its type on
+            each side of the vehicle
+        num_sensors (int): In case of scaling being True, the number of sensors of its
+            type on each side of the vehicle
+        data (np.ndarray): Array holding the latest x_len readings for a specific variable
+            for all sensors of its type
+    """
+
     def __init__(self, x_len, sensor_type, scaling, num_sensors):
+        """ Initialize attributes """
         self.x_len = x_len
         self.sensor_type = sensor_type
         self.scaling = scaling
         self.reset(num_sensors)
 
     def updateData(self, someValue, label):
+        """ Update data attribute with a specific sensor reading """
         if self.scaling:
             index = int(label[2]) - 1
             if label[1] == "R":
@@ -232,17 +263,26 @@ class PlotData:
             self.data[index, -1] = someValue
 
     def reset(self, num_sensors):
+        """ Reset data attribute """
         self.num_sensors = num_sensors
         if self.scaling:
             self.data = -1 * np.ones((2 * self.num_sensors, self.x_len))
         else:
             self.data = -1 * np.ones((2, self.x_len))
-        self.min_data = 0
-        self.max_data = 1
 
 
 class PlotNotebook(wx.Panel):
-    """ Class to put together multiple plots in wx """
+    """ Put together a plot in wx with a notebook to control it 
+    
+    The notebook selects which PlotData is directed to the Plot frame
+
+    Attr:
+        x_len (int): Maximum number of points to display at a time
+        nb (aui.AuiNotebook): Control with tabs
+        plot (Plot): Custom panel where plot is displayed
+        plot_data (dict<str: PlotData>): Dict to hold all PlotData objects. Keys are the
+            measured properties like "NDVI" or "Velocity"
+    """
 
     def __init__(self, parent, id=-1, x_len=30):
         """ Create new notebook with one empty tab """
@@ -266,18 +306,25 @@ class PlotNotebook(wx.Panel):
         self.nb.AddPage(page, name, select=True)
 
     def update(self, some_value, label, measured_property):
+        """ Modify a specific entry of plot_data
+        
+        If it is the currently active page, also display the plot
+        This is the function called by updatePlot in main_window
+        """
         page_name = self.nb.GetPageText(self.nb.GetSelection())
         self.plot_data[measured_property].updateData(some_value, label)
         if measured_property == page_name:
             self.plot.refresh(self.plot_data[page_name])
 
     def reset(self, num_sensors):
+        """ Reset data of all PlotData objects """
         for plot_data in self.plot_data.values():
             plot_data.reset(num_sensors)
         page_name = self.nb.GetPageText(self.nb.GetSelection())
         self.plot.refresh(self.plot_data[page_name])
 
     def OnPageChange(self, e):
+        """ Response to change on pages in the TabControl """
         page_name = self.nb.GetPageText(self.nb.GetSelection())
         self.plot.updateLines(self.plot_data[page_name])
         self.plot.refresh(self.plot_data[page_name])
