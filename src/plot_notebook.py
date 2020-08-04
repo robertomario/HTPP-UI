@@ -23,7 +23,7 @@ class Map(wx.Panel):
             keeps track of them to be able to delete them later
     """
 
-    def __init__(self, parent, id=-1, point_len=30, dpi=None, **kwargs):
+    def __init__(self, parent, id=-1, point_len=20, dpi=None, **kwargs):
         """ Create empty plot in panel 
         Args:
             parent (wx.Window): Parent object for the panel
@@ -284,7 +284,7 @@ class PlotNotebook(wx.Panel):
             measured properties like "NDVI" or "Velocity"
     """
 
-    def __init__(self, parent, id=-1, x_len=30):
+    def __init__(self, parent, id=-1, x_len=20):
         """ Create new notebook with one empty tab """
         wx.Panel.__init__(self, parent, id=id)
         self.x_len = x_len

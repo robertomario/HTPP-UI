@@ -366,7 +366,7 @@ class MainWindow(wx.Frame):
         btn = e.GetEventObject()
         is_pressed = btn.GetValue()
         if is_pressed:
-            self.timer.Start(200.0)
+            self.timer.Start(300.0)
             btn.SetLabelText("Stop")
         else:
             self.timer.Stop()
@@ -493,15 +493,15 @@ class MainWindow(wx.Frame):
                         - ds * math.cos(heading_radians)
                         - db * math.sin(heading_radians)
                     )
-                    line_list.append(
-                        self.mapPanel.ax.plot(
-                            sensor_x,
-                            sensor_y,
-                            marker="P",
-                            color=color,
-                            markerfacecolor=color,
-                        )[0]
-                    )
+                    # line_list.append(
+                    #     self.mapPanel.ax.plot(
+                    #         sensor_x,
+                    #         sensor_y,
+                    #         marker="P",
+                    #         color=color,
+                    #         markerfacecolor=color,
+                    #     )[0]
+                    # )
             self.mapPanel.refresh(line_list)
             line_list = []
 
