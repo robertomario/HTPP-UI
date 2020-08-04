@@ -144,9 +144,7 @@ class MainWindow(wx.Frame):
             variable_names = variables[device_name]
             scaling = devices[device_name][1]
             for name in variable_names:
-                self.axes[name] = self.plotter.add(
-                    name, device_name, scaling, num_sensors
-                )
+                self.plotter.add(name, device_name, scaling, num_sensors)
 
         middleBox.Add(st3, proportion=0, flag=wx.ALL)
         middleBox.Add(self.plotter, proportion=7, flag=wx.EXPAND | wx.ALL, border=20)
@@ -199,10 +197,8 @@ class MainWindow(wx.Frame):
         if dialogFlag == wx.ID_YES:
             self.logText.SetValue("")
             self.logSettings()
-            self.plotter.clear()
             num_sensors = self.cfg.ReadInt("numSensors", 1)
-            self.plotter.redoLegend(variables, devices, num_sensors)
-            self.plotter.refresh()
+            self.plotter.reset(num_sensors)
             self.mapPanel.clear()
             self.mapPanel.refresh()
             self.reset()
@@ -217,10 +213,8 @@ class MainWindow(wx.Frame):
         self.logText.SaveFile(finalFilename)
         self.logText.SetValue("")
         self.logSettings()
-        self.plotter.clear()
         num_sensors = self.cfg.ReadInt("numSensors", 1)
-        self.plotter.redoLegend(variables, devices, num_sensors)
-        self.plotter.refresh()
+        self.plotter.reset(num_sensors)
         self.mapPanel.clear()
         self.mapPanel.refresh()
         self.reset()
@@ -268,7 +262,7 @@ class MainWindow(wx.Frame):
             self.updateSensorHandler()
             self.updateCameraFrame()
             self.logSettings()
-            self.plotter.redoLegend(variables, devices, num_sensors)
+            self.plotter.reset(num_sensors)
         pDialog.Destroy()
 
     def OnLayout(self, e):
@@ -417,7 +411,6 @@ class MainWindow(wx.Frame):
                         self.updateMap(reading, label)
                     self.updateLog(reading, label)
                     self.updatePlot(reading, label)
-        self.plotter.refresh()
         self.num_readings += 1
 
     def updateLog(self, some_value, label):
@@ -445,7 +438,7 @@ class MainWindow(wx.Frame):
         sensor_type = label[0]
         measured_properties = variables[sensor_type]
         for i, measured_property in enumerate(measured_properties):
-            self.plotter.pages[measured_property].updateData(some_value[i], label)
+            self.plotter.update(some_value[i], label, measured_property)
 
     def updateMap(self, some_value, label):
         """ Update map after receiving new sensor data
