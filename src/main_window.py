@@ -13,7 +13,6 @@ import wx
 from .sensors import SensorHandler, setupGPSProjection, variables
 from .ports_dialog import PortsDialog, devices
 from .plot_notebook import Map, Plot, PlotNotebook
-from .repeated_timer import RepeatedTimer
 from .layout_dialog import LayoutDialog
 from .cameras import CameraFrame
 
