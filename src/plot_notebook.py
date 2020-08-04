@@ -13,16 +13,19 @@ import wx
 class Map(wx.Panel):
     """ Class to display a plot in wx """
 
-    def __init__(self, parent, id=-1, dpi=None, **kwargs):
+    def __init__(self, parent, id=-1, point_len=30, dpi=None, **kwargs):
         """ Create empty plot """
         wx.Panel.__init__(self, parent, id=id, **kwargs)
         self.figure = mpl.figure.Figure(dpi=dpi, figsize=(2, 2))
+        self.ax = self.figure.gca()
         self.canvas = FigureCanvas(self, -1, self.figure)
+        self.point_len = point_len
         sizer = wx.BoxSizer(wx.VERTICAL)
         sizer.Add(self.canvas, 1, wx.EXPAND)
         self.SetSizer(sizer)
+        self.clear()
 
-    def refresh(self):
+    def refresh(self, line_list):
         """ Function to tell the Plot to actually implement the latest
             modifications
 
@@ -30,11 +33,39 @@ class Map(wx.Panel):
         something important needs to be done, it will only work if called from
         the FigureCanvas, not the Figure
         """
+        if line_list != []:
+            self.lines.append(line_list)
+        if len(self.lines) > self.point_len:
+            old_line_list = self.lines.pop(0)
+            for line in old_line_list:
+                self.ax.lines.remove(line)
+            line = None
+            old_line_list = []
+            self.updateLimits()
         self.canvas.draw_idle()
 
     def clear(self):
         """ Function to clear the Axes of the Figure """
+        self.lines = []
+        self.min_x = 0
+        self.max_x = 1
+        self.min_y = 0
+        self.max_y = 1
         self.figure.gca().cla()
+
+    def updateLimits(self):
+        x_values = []
+        y_values = []
+        for line_list in self.lines:
+            x_values.append(line_list[0].get_xdata()[0])
+            y_values.append(line_list[0].get_ydata()[0])
+        time1 = time.time()
+        self.min_x = min(x_values) - 1
+        self.max_x = max(x_values) + 1
+        self.min_y = min(y_values) - 1
+        self.max_y = max(y_values) + 1
+        self.ax.set_xlim(self.min_x, self.max_x)
+        self.ax.set_ylim(self.min_y, self.max_y)
 
 
 class Plot(wx.Panel):

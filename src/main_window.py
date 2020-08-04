@@ -37,7 +37,6 @@ class MainWindow(wx.Frame):
         timer (wx.Timer): Object to call a function periodically
         sensor_handler (SensorHandler): Object to control multiple sensors at once
         camera_frame (CameraFrame): Secondary frame to display video from cameras
-        mapAxes (matplotlib.Axes): Axes to create map plot
         mapPanel (Plot): Panel containing the Figure where the map is drawn
         axes (dict): Dict to hold the Axes for each measured variables. Keys
             are of the format 'mL1/NDVI' or 'gR/Latitude'. Used to create the
@@ -125,7 +124,6 @@ class MainWindow(wx.Frame):
         leftBox = wx.BoxSizer(wx.VERTICAL)
         st1 = wx.StaticText(backgroundPanel, label="Map:")
         self.mapPanel = Map(backgroundPanel)
-        self.mapAxes = self.mapPanel.figure.gca()
         st2 = wx.StaticText(backgroundPanel, label="Log:")
         self.logText = wx.TextCtrl(
             backgroundPanel, style=wx.TE_MULTILINE | wx.TE_READONLY
@@ -200,7 +198,7 @@ class MainWindow(wx.Frame):
             num_sensors = self.cfg.ReadInt("numSensors", 1)
             self.plotter.reset(num_sensors)
             self.mapPanel.clear()
-            self.mapPanel.refresh()
+            self.mapPanel.refresh([])
             self.reset()
 
     def OnSave(self, e):
@@ -216,7 +214,7 @@ class MainWindow(wx.Frame):
         num_sensors = self.cfg.ReadInt("numSensors", 1)
         self.plotter.reset(num_sensors)
         self.mapPanel.clear()
-        self.mapPanel.refresh()
+        self.mapPanel.refresh([])
         self.reset()
 
     def OnQuit(self, e):
@@ -456,7 +454,8 @@ class MainWindow(wx.Frame):
             vehicle_x = some_value[4]
             vehicle_y = some_value[5]
             heading_radians = math.pi * some_value[6] / 180
-            self.mapAxes.plot(vehicle_x, vehicle_y, "bs")
+            line_list = []
+            line_list.append(self.mapPanel.ax.plot(vehicle_x, vehicle_y, "bs")[0])
             for label in self.labels:
                 if (label[0] != "g") and self.cfg.ReadBool("connected" + label, False):
                     if label[0] == "u":
@@ -494,14 +493,17 @@ class MainWindow(wx.Frame):
                         - ds * math.cos(heading_radians)
                         - db * math.sin(heading_radians)
                     )
-                    self.mapAxes.plot(
-                        sensor_x,
-                        sensor_y,
-                        marker="P",
-                        color=color,
-                        markerfacecolor=color,
+                    line_list.append(
+                        self.mapPanel.ax.plot(
+                            sensor_x,
+                            sensor_y,
+                            marker="P",
+                            color=color,
+                            markerfacecolor=color,
+                        )[0]
                     )
-            self.mapPanel.refresh()
+            self.mapPanel.refresh(line_list)
+            line_list = []
 
     def logSettings(self):
         """ Append settings to log """
