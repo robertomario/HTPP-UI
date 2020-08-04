@@ -12,7 +12,7 @@ import wx
 
 from .sensors import SensorHandler, setupGPSProjection, variables
 from .ports_dialog import PortsDialog, devices
-from .plot_notebook import Plot, PlotNotebook
+from .plot_notebook import Map, Plot, PlotNotebook
 from .repeated_timer import RepeatedTimer
 from .layout_dialog import LayoutDialog
 from .cameras import CameraFrame
@@ -37,7 +37,6 @@ class MainWindow(wx.Frame):
         timer (wx.Timer): Object to call a function periodically
         sensor_handler (SensorHandler): Object to control multiple sensors at once
         camera_frame (CameraFrame): Secondary frame to display video from cameras
-        mapAxes (matplotlib.Axes): Axes to create map plot
         mapPanel (Plot): Panel containing the Figure where the map is drawn
         axes (dict): Dict to hold the Axes for each measured variables. Keys
             are of the format 'mL1/NDVI' or 'gR/Latitude'. Used to create the
@@ -124,8 +123,7 @@ class MainWindow(wx.Frame):
 
         leftBox = wx.BoxSizer(wx.VERTICAL)
         st1 = wx.StaticText(backgroundPanel, label="Map:")
-        self.mapPanel = Plot(backgroundPanel)
-        self.mapAxes = self.mapPanel.figure.gca()
+        self.mapPanel = Map(backgroundPanel)
         st2 = wx.StaticText(backgroundPanel, label="Log:")
         self.logText = wx.TextCtrl(
             backgroundPanel, style=wx.TE_MULTILINE | wx.TE_READONLY
@@ -140,13 +138,11 @@ class MainWindow(wx.Frame):
         st3 = wx.StaticText(backgroundPanel, label="Plot:")
         self.plotter = PlotNotebook(backgroundPanel)
         num_sensors = self.cfg.ReadInt("numSensors", 1)
-        for device_name in list(variables.keys()):
+        for device_name in variables.keys():
             variable_names = variables[device_name]
             scaling = devices[device_name][1]
             for name in variable_names:
-                self.axes[name] = self.plotter.add(
-                    name, device_name, scaling, num_sensors
-                )
+                self.plotter.add(name, device_name, scaling, num_sensors)
 
         middleBox.Add(st3, proportion=0, flag=wx.ALL)
         middleBox.Add(self.plotter, proportion=7, flag=wx.EXPAND | wx.ALL, border=20)
@@ -199,12 +195,10 @@ class MainWindow(wx.Frame):
         if dialogFlag == wx.ID_YES:
             self.logText.SetValue("")
             self.logSettings()
-            self.plotter.clear()
             num_sensors = self.cfg.ReadInt("numSensors", 1)
-            self.plotter.redoLegend(variables, devices, num_sensors)
-            self.plotter.refresh()
+            self.plotter.reset(num_sensors)
             self.mapPanel.clear()
-            self.mapPanel.refresh()
+            self.mapPanel.refresh([])
             self.reset()
 
     def OnSave(self, e):
@@ -217,12 +211,10 @@ class MainWindow(wx.Frame):
         self.logText.SaveFile(finalFilename)
         self.logText.SetValue("")
         self.logSettings()
-        self.plotter.clear()
         num_sensors = self.cfg.ReadInt("numSensors", 1)
-        self.plotter.redoLegend(variables, devices, num_sensors)
-        self.plotter.refresh()
+        self.plotter.reset(num_sensors)
         self.mapPanel.clear()
-        self.mapPanel.refresh()
+        self.mapPanel.refresh([])
         self.reset()
 
     def OnQuit(self, e):
@@ -268,7 +260,7 @@ class MainWindow(wx.Frame):
             self.updateSensorHandler()
             self.updateCameraFrame()
             self.logSettings()
-            self.plotter.redoLegend(variables, devices, num_sensors)
+            self.plotter.reset(num_sensors)
         pDialog.Destroy()
 
     def OnLayout(self, e):
@@ -361,9 +353,9 @@ class MainWindow(wx.Frame):
             else:
                 self.sensor_handler.closeAll()
                 btn.SetLabelText("Connect")
-                self.btn_start.Enable(is_pressed)
-                self.btn_measure.Enable(is_pressed)
-                self.btn_test.Enable(not is_pressed)
+        self.btn_start.Enable(is_pressed)
+        self.btn_measure.Enable(is_pressed)
+        self.btn_test.Enable(not is_pressed)
 
     def OnStart(self, e):
         """ Button action to take measurements periodically
@@ -374,7 +366,7 @@ class MainWindow(wx.Frame):
         btn = e.GetEventObject()
         is_pressed = btn.GetValue()
         if is_pressed:
-            self.timer.Start(200.0)
+            self.timer.Start(300.0)
             btn.SetLabelText("Stop")
         else:
             self.timer.Stop()
@@ -417,21 +409,20 @@ class MainWindow(wx.Frame):
                         self.updateMap(reading, label)
                     self.updateLog(reading, label)
                     self.updatePlot(reading, label)
-        self.plotter.refresh()
         self.num_readings += 1
 
-    def updateLog(self, someValue, label):
+    def updateLog(self, some_value, label):
         """ Update log text after receiving new sensor data """
-        if someValue is not None:
+        if some_value is not None:
             ts = datetime.now().strftime("%H:%M:%S.%f")
             value_text = []
-            for value in someValue:
+            for value in some_value:
                 value_text.append(str(np.round(value, 4)))
             self.logText.AppendText(
                 (label + ";" + ts + ";" + ",".join(value_text) + "\n")
             )
 
-    def updatePlot(self, someValue, label):
+    def updatePlot(self, some_value, label):
         """ Updates plots after receiving new sensor data
 
         Instead of appending new points to a pre-existing plot, everytime a new
@@ -443,88 +434,11 @@ class MainWindow(wx.Frame):
         previous_measurements
         """
         sensor_type = label[0]
-        if devices[sensor_type][1]:
-            # color_number is to form the format 'C0' to cycle over colors
-            # The value of 1 needs to be substracted because the 'C0' format
-            # uses '0 to n-1' indexing, while the labels use '1 to n'
-            color_number = int(label[2]) - 1
-            if label[1] == "R":
-                # The order was made so that all right sensors would go after
-                # all the left ones
-                color_number += self.cfg.ReadInt("numSensors", 1)
-        else:
-            if label[1] == "L":
-                color_number = 0
-            else:
-                color_number = 1
         measured_properties = variables[sensor_type]
         for i, measured_property in enumerate(measured_properties):
-            # The first set of measurements produce just dots, while the
-            # subsequent ones produce lines connecting those dots
-            if self.num_readings == 0:
-                if np.isnan(someValue[i]):
-                    self.axes[measured_property].plot(
-                        0,
-                        -1,
-                        marker=",",
-                        color="C" + str(color_number),
-                        markerfacecolor="C" + str(color_number),
-                    )
-                else:
-                    self.axes[measured_property].plot(
-                        0,
-                        someValue[i],
-                        marker="o",
-                        color="C" + str(color_number),
-                        markerfacecolor="C" + str(color_number),
-                    )
-            else:
-                previous = self.sensor_handler.previous_measurements[
-                    label + "/" + measured_property
-                ]
-                if np.isnan(someValue[i]):
-                    if np.isnan(previous):
-                        self.axes[measured_property].plot(
-                            [self.num_readings - 1, self.num_readings],
-                            [-1, -1],
-                            marker=",",
-                            color="C" + str(color_number),
-                            markerfacecolor="C" + str(color_number),
-                        )
-                    else:
-                        self.axes[measured_property].plot(
-                            [self.num_readings - 1, self.num_readings],
-                            [previous, -1],
-                            marker=",",
-                            color="C" + str(color_number),
-                            markerfacecolor="C" + str(color_number),
-                        )
-                else:
-                    if np.isnan(previous):
-                        self.axes[measured_property].plot(
-                            [self.num_readings - 1, self.num_readings],
-                            [-1, someValue[i]],
-                            marker=",",
-                            color="C" + str(color_number),
-                            markerfacecolor="C" + str(color_number),
-                        )
-                        self.axes[measured_property].plot(
-                            self.num_readings,
-                            someValue[i],
-                            marker="o",
-                            color="C" + str(color_number),
-                            markerfacecolor="C" + str(color_number),
-                        )
-                    else:
-                        self.axes[measured_property].plot(
-                            [self.num_readings - 1, self.num_readings],
-                            [previous, someValue[i]],
-                            marker="o",
-                            color="C" + str(color_number),
-                            markerfacecolor="C" + str(color_number),
-                        )
+            self.plotter.update(some_value[i], label, measured_property)
 
-    def updateMap(self, someValue, label):
+    def updateMap(self, some_value, label):
         """ Update map after receiving new sensor data
 
         Place a marker in the locations of the map where the vehicle and
@@ -536,11 +450,12 @@ class MainWindow(wx.Frame):
         at least two measurements are required to compute the heading, which
         in turn is required to know how to orient the sensor markers
         """
-        if (self.num_readings > 0) and (not any(np.isnan(someValue[4:7]))):
-            vehicle_x = someValue[4]
-            vehicle_y = someValue[5]
-            heading_radians = math.pi * someValue[6] / 180
-            self.mapAxes.plot(vehicle_x, vehicle_y, "bs")
+        if (self.num_readings > 0) and (not any(np.isnan(some_value[4:7]))):
+            vehicle_x = some_value[4]
+            vehicle_y = some_value[5]
+            heading_radians = math.pi * some_value[6] / 180
+            line_list = []
+            line_list.append(self.mapPanel.ax.plot(vehicle_x, vehicle_y, "bs")[0])
             for label in self.labels:
                 if (label[0] != "g") and self.cfg.ReadBool("connected" + label, False):
                     if label[0] == "u":
@@ -578,14 +493,17 @@ class MainWindow(wx.Frame):
                         - ds * math.cos(heading_radians)
                         - db * math.sin(heading_radians)
                     )
-                    self.mapAxes.plot(
-                        sensor_x,
-                        sensor_y,
-                        marker="P",
-                        color=color,
-                        markerfacecolor=color,
-                    )
-            self.mapPanel.refresh()
+                    # line_list.append(
+                    #     self.mapPanel.ax.plot(
+                    #         sensor_x,
+                    #         sensor_y,
+                    #         marker="P",
+                    #         color=color,
+                    #         markerfacecolor=color,
+                    #     )[0]
+                    # )
+            self.mapPanel.refresh(line_list)
+            line_list = []
 
     def logSettings(self):
         """ Append settings to log """
