@@ -415,8 +415,12 @@ class MainWindow(wx.Frame):
         if some_value is not None:
             ts = datetime.now().strftime("%H:%M:%S.%f")
             value_text = []
-            for value in some_value:
-                value_text.append(str(np.round(value, 4)))
+            if label[0] == "g":
+                for value in some_value:
+                    value_text.append(str(value))
+            else:
+                for value in some_value:
+                    value_text.append(str(np.round(value, 4)))
             self.logText.AppendText(
                 (label + ";" + ts + ";" + ",".join(value_text) + "\n")
             )
