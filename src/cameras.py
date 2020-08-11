@@ -186,7 +186,7 @@ class CameraPanel(wx.Panel):
             ret, frame = self.camera.cap.read()
             if ret:
                 frame = cv2.flip(frame, 1)
-                timestamp = datetime.now().strftime("%H:%M:%S")
+                timestamp = datetime.now().strftime("%H:%M:%S.%f")
                 timed_frame = frame.copy()
                 if self.camera.is_recording:
                     cv2.putText(
