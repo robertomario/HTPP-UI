@@ -329,7 +329,7 @@ class MainWindow(wx.Frame):
                     if (label[0] == "g") and self.cfg.ReadBool(
                         "connected" + label, False
                     ):
-                        reading = [-73.939830, 45.423804]
+                        reading = [-73.939830, 45.423804, 45, 1, 10]
                         self.sensor_handler.GPS_constants = setupGPSProjection(reading)
                 btn.SetLabelText("Disconnect")
             else:
@@ -453,10 +453,10 @@ class MainWindow(wx.Frame):
         at least two measurements are required to compute the heading, which
         in turn is required to know how to orient the sensor markers
         """
-        if (self.num_readings > 0) and (not any(np.isnan(some_value[4:7]))):
-            vehicle_x = some_value[4]
-            vehicle_y = some_value[5]
-            heading_radians = math.pi * some_value[6] / 180
+        if (self.num_readings > 0) and (not any(np.isnan(some_value[[2, 7, 8]]))):
+            vehicle_x = some_value[7]
+            vehicle_y = some_value[8]
+            heading_radians = math.pi * some_value[2] / 180
             line_list = []
             line_list.append(self.mapPanel.ax.plot(vehicle_x, vehicle_y, "bs")[0])
             for label in self.labels:
