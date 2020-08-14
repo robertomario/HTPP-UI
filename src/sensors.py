@@ -111,7 +111,7 @@ def getUltrasonicReading(line_reader, numValues=3):
             newChar = line_reader.serial_device.read()
             if newChar == b"\r":
                 message = b"".join(charList)
-                measurement = 0.00875 * (int(message) - 15.3)
+                measurement = 0.0875 * (int(message) - 15.3)
                 if measurement >= 0:
                     values[count, 0] = measurement
                 message = b""
@@ -547,9 +547,7 @@ def setupGPSProjection(reading):
     return [origin_time, origin_longitude, origin_latitude, F_lon, F_lat]
 
 
-def processGPS(
-    someValue, label, GPS_constants, previous_measurements, num_readings, cfg
-):
+def processGPS(someValue, label, GPS_constants, previous_measurements, num_readings, cfg):
     """ Estimates heading and velocity from GPS readings
 
     Project the measurements to planar coordinates and use the immediately previous
