@@ -466,7 +466,7 @@ class SensorHandler:
             )
         else:
             reading = []
-            for i in range(len(variables[label[0]])):
+            for variable_name in variables[label[0]]:
                 reading.append(random.random())
         for i, variable_name in enumerate(variables[label[0]]):
             self.measurements[label + "/" + variable_name] = reading[i]
@@ -586,7 +586,7 @@ def processGPS(someValue, label, GPS_constants, previous_measurements, num_readi
         )
     else:
         return None
-    return np.array([someValue + [gps_x, gps_y, vehicle_x, vehicle_y]])
+    return np.array(someValue + [gps_x, gps_y, vehicle_x, vehicle_y])
 
 
 # Deprecated
