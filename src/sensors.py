@@ -8,7 +8,6 @@ Cameras are not listed here because they are handled in cameras.py
 from threading import Thread
 import random
 import math
-import time
 
 import numpy as np
 import pynmea2
@@ -135,31 +134,40 @@ def getGPSReading(line_reader, numValues=2):
 
     The GPS receiver is 19x HVS from Garmin
     The sensor uses NMEA 0183 encoding for the messages
-    Most of the measurements are ignored and just longitude and latitude are
-    kept
-    Whenever an Exception ocurrs, a value of None is given to the output.
+    Some the measurements are ignored
+    Whenever an Exception ocurrs, a value of nan is given to the output.
     numValues readings are taken and then averaged to produce the output.
     Units:
-        longitude, latitude: °
+        longitude, latitude, heading: °
+        velocity: m/s
+        altitude: m
     """
     count = 0
-    values = np.empty((numValues, 2))
+    values = np.empty((numValues, 5))
     values.fill(np.nan)
     while count < numValues:
         try:
             message = line_reader.readline().strip().decode()
             parsedMessage = pynmea2.parse(message)
-            if message[0:6] == "$GPGGA":
-                count += 1
+            if message[0:6] == "$GPVTG":
+                # Heading needs to be added 90 because the GPS reports by default 0°
+                # as the true north, while for me it is more convenient to have 0° as
+                # the true east (that way is aligned with positive x axis)
+                if parsedMessage.true_track is not None:
+                    values[count, 2] = parsedMessage.true_track + 90
+                    values[count, 3] = parsedMessage.spd_over_grnd_kmph / 3.6
+            elif message[0:6] == "$GPGGA":
                 # Both longitude and latitude being 0 simultaneously is way
                 # more likely to be a blank measurement than actually that
                 # point
                 if (parsedMessage.longitude != 0) or (parsedMessage.latitude != 0):
                     values[count, 0] = parsedMessage.longitude
                     values[count, 1] = parsedMessage.latitude
+                    values[count, 4] = parsedMessage.altitude
+                    count += 1
         except Exception as e:
-            pass
-    # Sometimes "Mean of empty slice" error happens
+            print(str(e))
+    # Sometimes "Mean of empty slice" warning happens
     finalMeasurement = np.nanmean(values, axis=0)
     return finalMeasurement
 
@@ -225,13 +233,13 @@ variables = {
     "g": [
         "Longitude",
         "Latitude",
+        "Heading",
+        "Velocity",
+        "Altitude",
         "GPS_X",
         "GPS_Y",
         "Vehicle_X",
         "Vehicle_Y",
-        "Heading",
-        "Velocity",
-        "Time",
     ],
     "e": [
         "Canopy Temperature",
@@ -444,15 +452,10 @@ class SensorHandler:
             reading = [
                 -73.939830 + 0.0001 * num_readings,
                 45.423804 + 0.0001 * num_readings,
+                45,
+                1,
+                10,
             ]
-            # reading = [
-            #     -73.939830 + 0.0001 * random.random(),
-            #     45.423804 + 0.0001 * random.random(),
-            # ]
-            # reading = [
-            #     -73.939830 + 0.0001,
-            #     45.423804 + 0.0001,
-            # ]
             reading = processGPS(
                 reading,
                 label,
@@ -463,7 +466,7 @@ class SensorHandler:
             )
         else:
             reading = []
-            for i in range(len(variables[label[0]])):
+            for variable_name in variables[label[0]]:
                 reading.append(random.random())
         for i, variable_name in enumerate(variables[label[0]]):
             self.measurements[label + "/" + variable_name] = reading[i]
@@ -530,21 +533,18 @@ class SensorHandler:
 def setupGPSProjection(reading):
     """ Use 1 GPS reading to compute constants for projection to planar coordinates 
     
-    The elevation has been temporarily hard-coded, but it should be made
-    adjustable as a setting, if not read from the GPS
     """
-    origin_time = time.time()
     origin_longitude = math.pi * reading[0] / 180
     origin_latitude = math.pi * reading[1] / 180
     a = 6378137  # Earth's semimajor axis
     b = 6356752.3142  # Earth's semiminor axis
-    h = 20  # Current elevation over sea level
+    h = reading[4]  # Current elevation over sea level
     c = math.sqrt(
         (a * math.cos(origin_latitude)) ** 2 + (b * math.sin(origin_latitude)) ** 2
     )
     F_lon = math.cos(origin_latitude) * ((a ** 2 / c) + h)
     F_lat = ((a * b) ** 2 / c ** 3) + h
-    return [origin_time, origin_longitude, origin_latitude, F_lon, F_lat]
+    return [origin_longitude, origin_latitude, F_lon, F_lat]
 
 
 def processGPS(someValue, label, GPS_constants, previous_measurements, num_readings, cfg):
@@ -555,29 +555,15 @@ def processGPS(someValue, label, GPS_constants, previous_measurements, num_readi
     The reported X and Y values are of the vehicle defined as the middle
     point of the toolbar that holds the sensors
     """
-    origin_time = GPS_constants[0]
-    origin_longitude = GPS_constants[1]
-    origin_latitude = GPS_constants[2]
-    F_lon = GPS_constants[3]
-    F_lat = GPS_constants[4]
+    origin_longitude = GPS_constants[0]
+    origin_latitude = GPS_constants[1]
+    F_lon = GPS_constants[2]
+    F_lat = GPS_constants[3]
     new_longitude = math.pi * someValue[0] / 180
     new_latitude = math.pi * someValue[1] / 180
-    new_time = time.time() - origin_time
     gps_x = (new_longitude - origin_longitude) * F_lon
     gps_y = (new_latitude - origin_latitude) * F_lat
-    if num_readings == 0:
-        old_time = 0
-        old_x = 0
-        old_y = 0
-    else:
-        old_time = previous_measurements[label + "/Time"]
-        old_x = previous_measurements[label + "/GPS_X"]
-        old_y = previous_measurements[label + "/GPS_Y"]
-    heading_radians = math.atan2(gps_y - old_y, gps_x - old_x)
-    velocity = math.sqrt((gps_x - old_x) ** 2 + (gps_y - old_y) ** 2) / (
-        new_time - old_time
-    )
-    heading = 180 * heading_radians / math.pi
+    heading_radians = math.pi * someValue[2] / 180
     if (label[1] == "L") and cfg.HasEntry("DGLX") and cfg.HasEntry("DGLY"):
         dgx = cfg.ReadFloat("DGLX") / 100
         dgy = cfg.ReadFloat("DGLY") / 100
@@ -598,19 +584,7 @@ def processGPS(someValue, label, GPS_constants, previous_measurements, num_readi
         )
     else:
         return None
-    return np.array(
-        [
-            someValue[0],
-            someValue[1],
-            gps_x,
-            gps_y,
-            vehicle_x,
-            vehicle_y,
-            heading,
-            velocity,
-            new_time,
-        ]
-    )
+    return np.append(someValue, [gps_x, gps_y, vehicle_x, vehicle_y])
 
 
 # Deprecated
