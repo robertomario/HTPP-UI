@@ -150,23 +150,24 @@ def getGPSReading(line_reader, numValues=2):
         try:
             message = line_reader.readline().strip().decode()
             parsedMessage = pynmea2.parse(message)
-            if message[0:6] == "$GPGGA":
-                count += 1
+            if message[0:6] == "$GPVTG":
+                # Heading needs to be added 90 because the GPS reports by default 0°
+                # as the true north, while for me it is more convenient to have 0° as
+                # the true east (that way is aligned with positive x axis)
+                if parsedMessage.true_track is not None:
+                    values[count, 2] = parsedMessage.true_track + 90
+                    values[count, 3] = parsedMessage.spd_over_grnd_kmph / 3.6
+            elif message[0:6] == "$GPGGA":
                 # Both longitude and latitude being 0 simultaneously is way
                 # more likely to be a blank measurement than actually that
                 # point
                 if (parsedMessage.longitude != 0) or (parsedMessage.latitude != 0):
                     values[count, 0] = parsedMessage.longitude
                     values[count, 1] = parsedMessage.latitude
-            elif message[0:6] == "$GPVTG":
-                # Heading needs to be added 90 because the GPS reports by default 0°
-                # as the true north, while for me it is more convenient to have 0° as
-                # the true east (that way is aligned with positive x axis)
-                values[count, 2] = parsedMessage.true_track + 90
-                values[count, 3] = parsedMessage.spd_over_grnd_kmph / 3.6
-                values[count, 4] = parsedMessage.altitude
+                    values[count, 4] = parsedMessage.altitude
+                    count += 1
         except Exception as e:
-            pass
+            print(str(e))
     # Sometimes "Mean of empty slice" error happens
     finalMeasurement = np.nanmean(values, axis=0)
     return finalMeasurement
@@ -586,7 +587,7 @@ def processGPS(someValue, label, GPS_constants, previous_measurements, num_readi
         )
     else:
         return None
-    return np.array(someValue + [gps_x, gps_y, vehicle_x, vehicle_y])
+    return np.append(someValue, [gps_x, gps_y, vehicle_x, vehicle_y])
 
 
 # Deprecated
