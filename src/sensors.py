@@ -134,9 +134,8 @@ def getGPSReading(line_reader, numValues=2):
 
     The GPS receiver is 19x HVS from Garmin
     The sensor uses NMEA 0183 encoding for the messages
-    Most of the measurements are ignored and just longitude and latitude are
-    kept
-    Whenever an Exception ocurrs, a value of None is given to the output.
+    Some the measurements are ignored
+    Whenever an Exception ocurrs, a value of nan is given to the output.
     numValues readings are taken and then averaged to produce the output.
     Units:
         longitude, latitude, heading: °
@@ -168,7 +167,7 @@ def getGPSReading(line_reader, numValues=2):
                     count += 1
         except Exception as e:
             print(str(e))
-    # Sometimes "Mean of empty slice" error happens
+    # Sometimes "Mean of empty slice" warning happens
     finalMeasurement = np.nanmean(values, axis=0)
     return finalMeasurement
 
@@ -534,8 +533,6 @@ class SensorHandler:
 def setupGPSProjection(reading):
     """ Use 1 GPS reading to compute constants for projection to planar coordinates 
     
-    The elevation has been temporarily hard-coded, but it should be made
-    adjustable as a setting, if not read from the GPS
     """
     origin_longitude = math.pi * reading[0] / 180
     origin_latitude = math.pi * reading[1] / 180
