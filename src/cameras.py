@@ -24,7 +24,8 @@ class CameraHandler:
         is_recording (boolean): Flag to indicate if current frame should be stored as
             video file. If False, the video is just displayed
         cap (cv2.VideoCapture): Device that actually reads the video
-        out (cv2.VideoWriter): Object that saves frames into video file
+        video_out (cv2.VideoWriter): Object that saves frames into video file
+        text_out (file stream): Object that saves frames into video file
         camera_thread (threading.Thread): Creates new thread to focus on cameras only
     """
 
@@ -44,14 +45,16 @@ class CameraHandler:
         while os.path.isfile(root_name + str(i) + ".mp4"):
             i += 1
         final_name = root_name + str(i) + ".mp4"
+        final_text_name = root_name + str(i) + ".txt"
         self.cap = cv2.VideoCapture(camera_index, cv2.CAP_DSHOW)
         self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, self.width)
         self.cap.set(cv2.CAP_PROP_FRAME_HEIGHT, self.height)
         self.cap.set(cv2.CAP_PROP_FPS, self.fps)
         fourcc = cv2.VideoWriter_fourcc(*"mp4v")
-        self.out = cv2.VideoWriter(
+        self.video_out = cv2.VideoWriter(
             final_name, fourcc, self.fps, (self.width, self.height)
         )
+        self.text_out = open(final_text_name, "w")
 
     def startRecording(self, new_thread=False):
         """ 
@@ -88,7 +91,8 @@ class CameraHandler:
                         cv2.LINE_AA,
                         False,
                     )
-                    self.out.write(timed_frame)
+                    self.video_out.write(timed_frame)
+                    self.text_out.write(timestamp + "\n")
                     cv2.putText(
                         frame,
                         "Recording",
@@ -115,8 +119,10 @@ class CameraHandler:
         self.stopRecording()
         if self.cap is not None:
             self.cap.release()
-        if self.out is not None:
-            self.out.release()
+        if self.video_out is not None:
+            self.video_out.release()
+        if self.text_out is not None:
+            self.text_out.close()
         cv2.destroyAllWindows()
         if self.camera_thread is not None:
             self.camera_thread.join()
@@ -125,7 +131,8 @@ class CameraHandler:
     def reset(self):
         """ Set attributes to None to be ready to redefine them """
         self.cap = None
-        self.out = None
+        self.video_out = None
+        self.text_out = None
         self.camera_thread = None
 
 
@@ -200,7 +207,8 @@ class CameraPanel(wx.Panel):
                         cv2.LINE_AA,
                         False,
                     )
-                    self.camera.out.write(timed_frame)
+                    self.camera.video_out.write(timed_frame)
+                    self.camera.text_out.write(timestamp + "\n")
                     cv2.putText(
                         frame,
                         "Recording",
