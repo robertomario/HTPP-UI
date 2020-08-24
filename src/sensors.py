@@ -154,7 +154,7 @@ def getGPSReading(line_reader, numValues=2):
                 # as the true north, while for me it is more convenient to have 0° as
                 # the true east (that way is aligned with positive x axis)
                 if parsedMessage.true_track is not None:
-                    values[count, 2] = parsedMessage.true_track + 90
+                    values[count, 2] = (90 - parsedMessage.true_track) % (360)
                     values[count, 3] = parsedMessage.spd_over_grnd_kmph / 3.6
             elif message[0:6] == "$GPGGA":
                 # Both longitude and latitude being 0 simultaneously is way
